@@ -1,3 +1,25 @@
+[README.md](https://github.com/user-attachments/files/28480850/README.md)
+# Partner Marketing Hub · v6
+
+## 🆕 V6 · Cambios
+
+- **Fecha de hoy real**: ahora `today` se calcula del sistema cada vez que abrís el hub. Si abrís el 28/5 marca el 28/5; mañana marca 29/5. Nada hardcoded.
+- **Tab Beneficios refactoreada**:
+  - **7 tipos nuevos**: UGC estándar · UGC en estudio · Caso de éxito de agencia · Success Story (Piezas) · Success Story (Audiovisual / Blog · con sub-toggle audiovisual/blog/ambos) · Pocket Event · Evento en oficina. Se eliminó Sponsorship (no entraba en tu lista nueva).
+  - **6 tiers de agencia**: Member · Silver · Gold · Platinum · Titanium · Blue Titanium.
+  - **Sin más campos**: CTA palabra clave y "Beneficio que ofrece" eliminados.
+  - **Métricas como link**: en lugar de campos estructurados, cada slot tiene un campo **"Link a métricas"** (Sheet, dashboard, lo que sea). Se ve en el detalle como un card linkeado.
+  - **Capacidad configurable**: botón "Capacidad" en el header del tab Beneficios (solo Admin) → modal donde definís cuántos slots y en qué período (mensual / bimestral / trimestral / sin límite) por cada tipo. Se guarda en localStorage.
+- **AI renombrado**: "Lumi" → **"Asistente AI"** en sidebar, top bar, modals y textos. Las sugerencias del chat ahora son **dinámicas**: cambian según el estado actual del calendario (items sin copy, slots libres del mes próximo, beneficios sin métricas, atrasados, etc).
+- **Look & feel más profesional**: 
+  - Background limpio (`#fafafa`), sin gradientes radiales distractivos.
+  - Sombras más sutiles (Linear/Vercel-style).
+  - Border-radius más conservador (8px en cards/botones, 6px en chips/pills).
+  - Tipografía más balanceada (menos extrabold gratuito).
+  - Sidebar y top bar más densos y limpios.
+  - Paleta de categorías más muted (mismo significado, menos noise visual).
+  - Botones secundarios con borde sutil neutral.
+
 # Partner Marketing Hub · v5
 
 Calendario único y operativo del equipo Partner Marketing Tiendanube ARG. Reemplaza el sheet `[B&C 2026] Partner Marketing | HUB ARG`. **Uso interno · no compartir fuera de Tiendanube.**

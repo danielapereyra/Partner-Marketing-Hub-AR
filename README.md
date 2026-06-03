@@ -1,4 +1,4 @@
-[README.md](https://github.com/user-attachments/files/28480850/README.md)
+[README.md](https://github.com/user-attachments/files/28558558/README.md)
 # Partner Marketing Hub · v6
 
 ## 🆕 V6 · Cambios

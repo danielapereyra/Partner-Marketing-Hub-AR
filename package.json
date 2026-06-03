@@ -1,0 +1,10 @@
+{
+  "name": "partner-marketing-hub",
+  "version": "2.0.0",
+  "description": "Partner Marketing Hub - Tiendanube ARG · Fase 2 Lite",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.0"
+  }
+}

@@ -535,12 +535,12 @@
           <button class="btn btn-secondary w-full justify-center btn-sm mb-1.5" onclick="exportAllData()" title="Descargar todo el state como JSON">
             <i data-lucide="download" class="w-3 h-3"></i>Exportar datos
           </button>
-          <button class="btn btn-secondary w-full justify-center btn-sm mb-1.5" onclick="importAllData()" title="Subir un backup JSON">
+          <button class="btn btn-secondary w-full justify-center btn-sm mb-1.5" onclick="importAllData()" title="⚠️ Sobrescribe el estado actual de TODOS los usuarios. Usar solo en casos de restauración por desastre, avisando al equipo antes.">
             <i data-lucide="upload-cloud" class="w-3 h-3"></i>Importar backup
           </button>
-          <button class="btn btn-ghost w-full justify-center btn-xs" onclick="resetAllData()" title="Volver al estado original del HTML">
-            <i data-lucide="rotate-ccw" class="w-3 h-3"></i>Resetear datos
-          </button>
+          <div class="text-[10px] text-[#92400e] bg-[#fffbeb] border border-[#fde68a] rounded px-2 py-1.5 leading-tight">
+            ⚠️ <strong>Importar</strong> reemplaza los datos del Hub para todos. Usar solo para restaurar tras un desastre, avisando al equipo.
+          </div>
         </div>
 
         <div id="sidebar-viewer-block" class="mt-auto p-3 rounded-lg border border-[#e4e4e7] bg-[#fafafa] hidden">
@@ -554,14 +554,11 @@
           </button>
         </div>
 
-        <div class="px-2 pt-4 flex items-center justify-between text-[11px] text-[var(--light-grey)]">
-          <div class="flex items-center gap-2">
-            <div id="user-avatar" class="w-7 h-7 rounded-full bg-[var(--dark-blue)] text-white text-xs font-bold flex items-center justify-center">DP</div>
-            <div>
-              <div id="user-name" class="font-semibold text-[var(--text-dark)] text-xs">Daniela Pereyra</div>
-              <div id="user-role-text">Partner Marketing</div>
-            </div>
-          </div>
+        <div class="px-2 pt-4 flex items-center justify-between gap-2 text-[11px] text-[var(--light-grey)]">
+          <button id="mode-toggle-btn" class="btn btn-secondary btn-sm flex-1 justify-center" onclick="switchRoleMenu()" title="Cambiar entre modo Admin (editar) y Visualización (solo lectura)">
+            <span id="mode-toggle-icon">🛠️</span>
+            <span id="mode-toggle-label">Modo Admin</span>
+          </button>
           <button class="btn btn-ghost btn-xs" onclick="openHelp()" title="Ayuda">
             <i data-lucide="help-circle" class="w-4 h-4"></i>
           </button>
@@ -1210,14 +1207,15 @@
         const aiTopBtn = document.querySelector('button[onclick="openAIChat()"]');
         if (aiTopBtn) aiTopBtn.style.display = admin ? '' : 'none';
         // User block
-        const uName = document.getElementById('user-name');
-        const uRole = document.getElementById('user-role-text');
-        const uAvatar = document.getElementById('user-avatar');
-        if (uName && uRole) {
-          uName.textContent = admin ? 'Daniela Pereyra' : 'Equipo invitado';
-          uRole.textContent = admin ? 'Partner Marketing · Admin' : 'Solo visualización';
-          uAvatar.textContent = admin ? 'DP' : '👀';
-          uAvatar.style.background = admin ? 'var(--dark-blue)' : '#92400e';
+        const modeIcon = document.getElementById('mode-toggle-icon');
+        const modeLabel = document.getElementById('mode-toggle-label');
+        const modeBtn = document.getElementById('mode-toggle-btn');
+        if (modeIcon && modeLabel && modeBtn) {
+          modeIcon.textContent = admin ? '🛠️' : '👀';
+          modeLabel.textContent = admin ? 'Modo Admin' : 'Modo Visualización';
+          modeBtn.title = admin
+            ? 'Estás editando. Click para pasar a Solo lectura.'
+            : 'Estás en Solo lectura. Click para pasar a Admin (editar).';
         }
       }
       function showWelcome() {
@@ -3181,7 +3179,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
                   </div>
                 </div>
                 <div id="ai-thread" class="flex flex-col gap-3 mb-4 max-h-[420px] overflow-y-auto scroll-v p-1">
-                  <div class="ai-bubble ai-bubble-ai">¡Hola Daniela! ✨ Tengo todo tu calendario cargado (122 items). Pediime un slot libre, redactar copy, conflictos o resumen.</div>
+                  <div class="ai-bubble ai-bubble-ai">¡Hola! ✨ Tengo todo el calendario cargado. Pedime un slot libre, redactar copy, detectar conflictos o un resumen.</div>
                 </div>
                 <div class="flex items-center gap-2">
                   <div class="flex-1 flex items-center gap-2 px-3 py-2 rounded-full border border-[var(--lightest-grey)] bg-white">
@@ -3263,7 +3261,6 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
                 </div>
               </div>
               <div class="pill mb-4" style="background:#fef3c7;color:#92400e">${ic('eye','w-3 h-3')} Modo visualización · solo lectura</div>
-              <p class="text-sm text-[var(--mid-grey)] mb-1">Si necesitás conversación libre o generación de copy, pedile acceso admin al equipo Partner Marketing (Daniela Pereyra · Candela Caamaño).</p>
             </div>
 
             <div class="bg-white rounded-2xl card-shadow p-6 mb-5">
@@ -3999,7 +3996,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
             <button class="btn btn-ghost" onclick="closeAllDrawers()">${ic('x','w-5 h-5')}</button>
           </div>
           <div id="ai-thread" class="flex-1 overflow-y-auto scroll-v px-6 py-4 flex flex-col gap-3 bg-[var(--light-grey-bg)]">
-            <div class="ai-bubble ai-bubble-ai">¡Hola Daniela! ✨ Tengo el calendario cargado (122 items). ¿En qué te ayudo?</div>
+            <div class="ai-bubble ai-bubble-ai">¡Hola! ✨ Tengo el calendario cargado. ¿En qué te ayudo?</div>
           </div>
           <div class="px-6 py-3 border-t border-[var(--lightest-grey)] bg-white flex items-center gap-2">
             <div class="flex-1 flex items-center gap-2 px-3 py-2 rounded-full border border-[var(--lightest-grey)]">${ic('message-circle','w-4 h-4 text-[var(--mid-grey)]')}<input id="ai-input" placeholder="Preguntale al asistente…" class="bg-transparent text-sm outline-none flex-1" onkeydown="if(event.key==='Enter'){aiSend()}" /></div>
@@ -4054,10 +4051,10 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
                   <span class="text-xs text-[var(--mid-grey)]">${admin?'🛠️ Estás en modo Admin · podés editar todo':'👀 Estás en modo Visualización · solo lectura'}</span>
                 </div>
                 ${admin ? `
-                  <div class="mt-4 p-3 rounded-xl border border-[#fde68a] bg-[#fffbeb] text-xs text-[#92400e] flex items-start gap-2">
-                    <span class="text-base shrink-0">💾</span>
+                  <div class="mt-4 p-3 rounded-xl border border-[#bbf7d0] bg-[#f0fdf4] text-xs text-[#166534] flex items-start gap-2">
+                    <span class="text-base shrink-0">🟢</span>
                     <div>
-                      <strong>Aviso de persistencia (prototipo)</strong>: tus cambios se guardan en este navegador (localStorage). Sobreviven al refresh ✅, pero <strong>no se sincronizan</strong> a otros dispositivos ni para otros usuarios. Para compartir cambios o tener backup, andá a la sidebar → <strong>Exportar datos</strong> y guardá el JSON en Drive. En Fase 2 (Supabase) esto desaparece y todo se sincroniza automático.
+                      <strong>Hub sincronizado.</strong> Tus cambios se guardan en la base de datos compartida y se sincronizan automáticamente (refresh cada 60s). Para ver cambios al instante, refrescá la página.
                     </div>
                   </div>
                 ` : ''}

@@ -1285,7 +1285,7 @@
               <div class="flex gap-3"><div class="text-2xl">📅</div><div><div class="font-bold h-heading">Calendario</div><div class="text-[var(--mid-grey)]">Cambiá entre vistas Trimestre · Mes · Semana · Día con los botones arriba a la derecha. Filtrá por Tipo (Acción/Comunicación) y vas a ver las categorías relevantes como dropdown. Click en cualquier chip → detalle.</div></div></div>
               <div class="flex gap-3"><div class="text-2xl">✉️</div><div><div class="font-bold h-heading">Estrategias</div><div class="text-[var(--mid-grey)]">Solo comunicaciones del mes con copys completos. Botón "Copiar mes completo" baja todo al portapapeles para usar en HubSpot/WhatsApp.</div></div></div>
               <div class="flex gap-3"><div class="text-2xl">✨</div><div><div class="font-bold h-heading">Asistente AI (IA)</div><div class="text-[var(--mid-grey)]">En cada item el detalle muestra acciones inteligentes según el contexto (ej: "Generar copy" si la comm no tiene). Admin tiene chat full, Visualización solo resumen ejecutivo.</div></div></div>
-              <div class="flex gap-3"><div class="text-2xl">📚</div><div><div class="font-bold h-heading">Biblioteca</div><div class="text-[var(--mid-grey)]">Templates de copy, briefs/decks, links y casos de éxito. Solo Admin puede agregar/editar.</div></div></div>
+              <div class="flex gap-3"><div class="text-2xl">📚</div><div><div class="font-bold h-heading">Biblioteca</div><div class="text-[var(--mid-grey)]">Documentos, planillas, templates y recursos del equipo. Solo Admin puede agregar/editar.</div></div></div>
               <div class="flex gap-3"><div class="text-2xl">📊</div><div><div class="font-bold h-heading">Insights</div><div class="text-[var(--mid-grey)]">KPIs ejecutivos, distribución, conflictos detectados y slots libres.</div></div></div>
               <div class="flex gap-3"><div class="text-2xl">📥</div><div><div class="font-bold h-heading">Carga masiva</div><div class="text-[var(--mid-grey)]">Subí un doc con tu estrategia o un CSV y la IA detecta items automáticamente.</div></div></div>
             </div>
@@ -2494,7 +2494,10 @@
                   ${t.size ? `<span class="text-[10px] text-[var(--mid-grey)] font-semibold">${t.tipo?.toUpperCase()||''} · ${t.size}</span>` : ''}
                   ${t.usos ? `<span class="text-[10px] text-[var(--mid-grey)] font-semibold">${t.usos} usos</span>` : ''}
                   ${t.fecha ? `<span class="text-[10px] text-[var(--mid-grey)] font-semibold">${t.fecha}</span>` : ''}
-                  ${t.url ? `<button class="btn btn-secondary btn-xs">${ic('external-link','w-3 h-3')} Abrir</button>` : `<button class="btn btn-secondary btn-xs">${ic('arrow-right','w-3 h-3')} Usar</button>`}
+                  ${t.url ? `<div class="flex items-center gap-1">
+                    <a href="${escapeHtml(t.url)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-xs">${ic('external-link','w-3 h-3')} Abrir</a>
+                    <button class="btn btn-ghost btn-xs" onclick="libCopyUrl('${libTab}','${t.id}')" title="Copiar link">${ic('copy','w-3 h-3')}</button>
+                  </div>` : `<button class="btn btn-secondary btn-xs" onclick="libEdit('${libTab}','${t.id}')">${ic('arrow-right','w-3 h-3')} Agregar link</button>`}
                 </div>
               </div>
             `).join('')}
@@ -2506,6 +2509,13 @@
         `;
       }
       function setLibTab(t) { libTab = t; renderAll(); }
+      function libCopyUrl(tab, id) {
+        const item = (libraryData[tab] || []).find(x => x.id === id);
+        if (!item || !item.url) return toast('Este item no tiene link');
+        navigator.clipboard.writeText(item.url)
+          .then(() => toast('📋 Link copiado al portapapeles'))
+          .catch(() => toast('No se pudo copiar el link'));
+      }
       function libDelete(tab, id) {
         if (!confirm('¿Eliminar este item de la biblioteca?')) return;
         libraryData[tab] = libraryData[tab].filter(x => x.id !== id);
@@ -3346,14 +3356,227 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
         const top = late.slice(0,5);
         return `Tenés <strong>${late.length} items atrasados</strong>. Te listo los 5 más urgentes:<div class="ai-suggestion">${top.map(it => `· <strong>${fmtDate(it.fecha)}</strong> — ${escapeHtml(it.titulo.slice(0,60))} (${STATUSES[statusOf(it)].label})`).join('<br>')}</div>Priorizá por status: los en proceso primero, después los backlog. Click en cualquiera para abrirlos.`;
       }
+      // ============== AI · PATTERN MATCHING SOBRE DATOS REALES ==============
+      function aiNormalize(s) {
+        return (s || '').toLowerCase()
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          .replace(/[¿?¡!.,;:]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+      // Mapa de keywords → tipo de iniciativa/categoría
+      const AI_TYPE_KEYWORDS = [
+        { match: ['pocket event', 'pocket', 'cena', 'brunch', 'desayuno hosted'], benefitType: 'pocket_event', categoria: 'pocket_event', label: 'Pocket Event' },
+        { match: ['evento oficina', 'evento en oficina', 'encuentro oficina', 'oficina tn'], benefitType: 'evento_oficina', label: 'Evento en oficina' },
+        { match: ['big event', 'evento grande'], categoria: 'big_event', label: 'Big event' },
+        { match: ['key city', 'ciudad'], categoria: 'key_city', label: 'Key city' },
+        { match: ['webinar'], benefitType: 'webinar_online', categoria: 'webinar', label: 'Webinar' },
+        { match: ['ugc estudio', 'ugc en estudio'], benefitType: 'ugc_estudio', label: 'UGC en estudio' },
+        { match: ['ugc estandar', 'ugc'], benefitType: 'ugc_estandar', categoria: 'ugc', label: 'UGC' },
+        { match: ['caso exito agencia', 'caso de exito de agencia', 'caso de exito agencia'], benefitType: 'caso_exito_agencia', label: 'Caso de éxito de agencia' },
+        { match: ['caso exito', 'caso de exito', 'business case'], categoria: 'business_case', label: 'Caso de éxito / Business case' },
+        { match: ['success story av', 'success story audiovisual', 'historia av', 'success av'], benefitType: 'success_story_av', label: 'Success Story Audiovisual' },
+        { match: ['success story', 'success', 'historia'], benefitType: 'success_story_piezas', label: 'Success Story' },
+        { match: ['social media', 'instagram', 'social'], categoria: 'social_media', label: 'Social media' },
+        { match: ['sponsorship', 'sponsoreo'], categoria: 'sponsorship', label: 'Sponsorship' },
+        { match: ['email', 'mail'], categoria: 'email', label: 'Email' },
+        { match: ['whatsapp', 'wpp', 'wsp'], categoria: 'whatsapp', label: 'WhatsApp' },
+        { match: ['newsletter'], categoria: 'newsletter', label: 'Newsletter' },
+        { match: ['comunidad', 'aviso comunidad'], categoria: 'comunidad', label: 'Comunidad' },
+      ];
+      // Devuelve la entrada de AI_TYPE_KEYWORDS que matchea, o null
+      function aiMatchType(norm) {
+        for (const t of AI_TYPE_KEYWORDS) {
+          for (const kw of t.match) {
+            if (norm.includes(kw)) return t;
+          }
+        }
+        return null;
+      }
+      // Convierte benefits a items virtuales para búsqueda unificada
+      function aiAllItems() {
+        const virtualBenefits = (state.benefits || []).map(b => {
+          const bt = BENEFIT_TYPES[b.tipo_beneficio] || {};
+          return {
+            id: 'ben-virtual-' + b.id,
+            _isBenefit: true,
+            _benefit: b,
+            titulo: b.headline || `${bt.label || b.tipo_beneficio} · ${b.agencia || ''}`.trim(),
+            fecha: b.fecha_publicado || b.fecha_objetivo || null,
+            categoria: b.tipo_beneficio,
+            tipo_beneficio: b.tipo_beneficio,
+            agencia: b.agencia,
+            owners: b.owner_tn ? [b.owner_tn] : [],
+            audiencia: [],
+            canales: [],
+            status: b.etapa,
+            etapa: b.etapa,
+          };
+        });
+        return [...(state.items || []), ...virtualBenefits];
+      }
+      // Parser de fechas en español: 15/6, 15-6, 15 de junio, hoy, mañana, esta semana, próxima semana, junio, julio
+      function aiParseDate(norm) {
+        const todayKey = today.toISOString().slice(0, 10);
+        const tomorrow = new Date(today.getTime() + 24*3600*1000).toISOString().slice(0, 10);
+        if (/\bhoy\b/.test(norm)) return { from: todayKey, to: todayKey, label: 'hoy' };
+        if (/\bmanana\b/.test(norm)) return { from: tomorrow, to: tomorrow, label: 'mañana' };
+        if (/\b(esta semana|esta sem)\b/.test(norm)) {
+          const dow = today.getDay() || 7;
+          const monday = new Date(today.getTime() - (dow - 1)*24*3600*1000);
+          const sunday = new Date(monday.getTime() + 6*24*3600*1000);
+          return { from: monday.toISOString().slice(0,10), to: sunday.toISOString().slice(0,10), label: 'esta semana' };
+        }
+        if (/\b(proxima semana|sig semana|siguiente semana)\b/.test(norm)) {
+          const dow = today.getDay() || 7;
+          const nextMon = new Date(today.getTime() + (8 - dow)*24*3600*1000);
+          const nextSun = new Date(nextMon.getTime() + 6*24*3600*1000);
+          return { from: nextMon.toISOString().slice(0,10), to: nextSun.toISOString().slice(0,10), label: 'la próxima semana' };
+        }
+        // 15/6, 15-6, 15/06
+        const m1 = norm.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+        if (m1) {
+          const d = String(m1[1]).padStart(2,'0');
+          const mo = String(m1[2]).padStart(2,'0');
+          const y = m1[3] ? (m1[3].length === 2 ? '20'+m1[3] : m1[3]) : String(today.getFullYear());
+          const key = `${y}-${mo}-${d}`;
+          return { from: key, to: key, label: `${d}/${mo}` };
+        }
+        // mes en palabras
+        const months = { enero:1, febrero:2, marzo:3, abril:4, mayo:5, junio:6, julio:7, agosto:8, septiembre:9, octubre:10, noviembre:11, diciembre:12 };
+        const dayMonth = norm.match(/\b(\d{1,2}) de (enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/);
+        if (dayMonth) {
+          const d = String(dayMonth[1]).padStart(2,'0');
+          const mo = String(months[dayMonth[2]]).padStart(2,'0');
+          const key = `${today.getFullYear()}-${mo}-${d}`;
+          return { from: key, to: key, label: `${d} de ${dayMonth[2]}` };
+        }
+        // sólo mes
+        for (const [name, num] of Object.entries(months)) {
+          const re = new RegExp(`\\b${name}\\b`);
+          if (re.test(norm)) {
+            const monthKey = `${today.getFullYear()}-${String(num).padStart(2,'0')}`;
+            return { from: monthKey+'-01', to: monthKey+'-31', label: name, isMonth: true };
+          }
+        }
+        return null;
+      }
+      function aiFmt(i) {
+        const fecha = i.fecha ? fmtDate(i.fecha) : 'TBD';
+        const tag = i._isBenefit ? ` <span style="color:var(--mid-grey)">[Iniciativa${i.agencia?' · '+escapeHtml(i.agencia):''}]</span>` : '';
+        const st = i._isBenefit
+          ? (BENEFIT_STAGES.find(s=>s.id===i.etapa)?.label || i.etapa || '')
+          : (STATUSES[statusOf(i)]?.label || '');
+        return `· <strong>${fecha}</strong> — ${escapeHtml((i.titulo||'').slice(0,80))}${tag}${st?` <span style="color:var(--mid-grey)">(${st})</span>`:''}`;
+      }
+      // ===== DETECTORES =====
+      function aiDetectNext(norm) {
+        if (!/\b(proximo|proxima|prox|siguiente|cuando es|cuando viene)\b/.test(norm)) return null;
+        const t = aiMatchType(norm);
+        if (!t) return null;
+        const todayKey = today.toISOString().slice(0, 10);
+        const matches = aiAllItems().filter(i => {
+          if (!i.fecha || i.fecha < todayKey) return false;
+          if (t.benefitType && i.tipo_beneficio === t.benefitType) return true;
+          if (t.categoria && i.categoria === t.categoria) return true;
+          return false;
+        }).sort((a,b) => a.fecha.localeCompare(b.fecha));
+        if (!matches.length) return `No encontré ${t.label} agendado a futuro. ¿Lo cargaste en el calendario o en Iniciativas?`;
+        const next = matches[0];
+        const days = Math.round((new Date(next.fecha+'T12:00:00').getTime() - today.getTime()) / (24*3600*1000));
+        const dayLabel = days === 0 ? 'hoy' : days === 1 ? 'mañana' : `en ${days} días`;
+        const extra = matches.length > 1 ? `<br><br>Y los próximos ${Math.min(matches.length-1, 4)}:<br>${matches.slice(1, 5).map(aiFmt).join('<br>')}` : '';
+        return `El próximo <strong>${t.label}</strong> es <strong>${dayLabel}</strong>:<div class="ai-suggestion">${aiFmt(next)}${extra}</div>`;
+      }
+      function aiDetectByDate(norm) {
+        const d = aiParseDate(norm);
+        if (!d) return null;
+        const list = aiAllItems()
+          .filter(i => i.fecha && i.fecha >= d.from && i.fecha <= d.to)
+          .sort((a,b) => a.fecha.localeCompare(b.fecha));
+        if (!list.length) return `${d.isMonth ? `En ${d.label}` : `Para ${d.label}`} no encontré nada agendado ✨`;
+        const head = d.isMonth
+          ? `En <strong>${d.label}</strong> tenés <strong>${list.length} items</strong>:`
+          : `Para <strong>${d.label}</strong> tenés <strong>${list.length} item${list.length>1?'s':''}</strong>:`;
+        return `${head}<div class="ai-suggestion">${list.slice(0,12).map(aiFmt).join('<br>')}${list.length>12?`<br>… y ${list.length-12} más.`:''}</div>`;
+      }
+      function aiDetectByAgency(norm) {
+        if (!/\b(agencia|con\b|de la agencia)\b/.test(norm) && !aiAgencies().some(a => norm.includes(a.toLowerCase()))) return null;
+        const agency = aiAgencies().find(a => norm.includes(a.toLowerCase()));
+        if (!agency) return null;
+        const list = aiAllItems()
+          .filter(i => (i.agencia || '').toLowerCase() === agency.toLowerCase())
+          .sort((a,b) => (b.fecha||'').localeCompare(a.fecha||''));
+        if (!list.length) return `No encontré items con <strong>${escapeHtml(agency)}</strong>.`;
+        const future = list.filter(i => i.fecha && i.fecha >= today.toISOString().slice(0,10));
+        const past = list.filter(i => i.fecha && i.fecha < today.toISOString().slice(0,10));
+        let out = `<strong>${escapeHtml(agency)}</strong> tiene ${list.length} items en el hub:`;
+        if (future.length) out += `<div class="ai-suggestion"><strong>${future.length} próximos:</strong><br>${future.slice(0,6).map(aiFmt).join('<br>')}</div>`;
+        if (past.length) out += `<div class="ai-suggestion" style="margin-top:4px"><strong>${past.length} ya realizados</strong> (mostrando los 4 más recientes):<br>${past.slice(0,4).map(aiFmt).join('<br>')}</div>`;
+        return out;
+      }
+      function aiAgencies() {
+        const set = new Set();
+        (state.benefits || []).forEach(b => b.agencia && set.add(b.agencia));
+        (state.items || []).forEach(i => i.agencia && set.add(i.agencia));
+        return [...set];
+      }
+      function aiDetectByOwner(norm) {
+        if (!/\bowner\b|\bde (daniela|dani|cande|candela|mauro|alejandra|ale)\b|\bitems de\b/.test(norm)) return null;
+        const owners = aiOwners();
+        const owner = owners.find(o => {
+          const parts = o.toLowerCase().split(/\s+/);
+          return parts.some(p => norm.includes(p));
+        });
+        if (!owner) return null;
+        const list = aiAllItems()
+          .filter(i => (i.owners || []).some(o => o.toLowerCase() === owner.toLowerCase()))
+          .sort((a,b) => (a.fecha||'').localeCompare(b.fecha||''));
+        if (!list.length) return `No encontré items con <strong>${escapeHtml(owner)}</strong> como owner.`;
+        const todayKey = today.toISOString().slice(0,10);
+        const future = list.filter(i => i.fecha && i.fecha >= todayKey);
+        return `<strong>${escapeHtml(owner)}</strong> es owner de ${list.length} items (${future.length} a futuro):<div class="ai-suggestion">${(future.length?future:list).slice(0,8).map(aiFmt).join('<br>')}</div>`;
+      }
+      function aiOwners() {
+        const set = new Set();
+        (state.items || []).forEach(i => (i.owners || []).forEach(o => o && set.add(o)));
+        (state.benefits || []).forEach(b => b.owner_tn && set.add(b.owner_tn));
+        return [...set];
+      }
+      function aiDetectByType(norm) {
+        const t = aiMatchType(norm);
+        if (!t) return null;
+        const d = aiParseDate(norm);
+        const list = aiAllItems().filter(i => {
+          if (t.benefitType && i.tipo_beneficio === t.benefitType) return true;
+          if (t.categoria && i.categoria === t.categoria) return true;
+          return false;
+        }).filter(i => !d || (i.fecha && i.fecha >= d.from && i.fecha <= d.to))
+          .sort((a,b) => (a.fecha||'').localeCompare(b.fecha||''));
+        if (!list.length) return `No encontré <strong>${t.label}</strong>${d?` en ${d.label}`:''}.`;
+        return `<strong>${list.length}</strong> ${t.label}${list.length>1?'s':''}${d?` en ${d.label}`:''}:<div class="ai-suggestion">${list.slice(0,10).map(aiFmt).join('<br>')}${list.length>10?`<br>… y ${list.length-10} más.`:''}</div>`;
+      }
+      // ===== MAIN =====
       function generateAIResponse(q) {
-        q = q.toLowerCase();
-        if (q.includes('slot') || q.includes('libre') || q.includes('hueco')) return aiAnswerSlots();
-        if (q.includes('copy') || q.includes('whatsapp') || q.includes('redactar') || q.includes('draft')) return aiAnswerCopy();
-        if (q.includes('cuant') || q.includes('count') || q.includes('cantidad')) return aiAnswerCount();
-        if (q.includes('próx') || q.includes('prox') || q.includes('siguiente') || q.includes('junio')) return aiAnswerNext();
-        if (q.includes('conflict') || q.includes('solap')) return `Revisé las próximas 4 semanas — sin solapes críticos. Sugerencia: separar mínimo 5 días las comms a Partners.`;
-        return `Buena pregunta. Probá <strong>Insights</strong> para el resumen ejecutivo + slots libres, o <strong>Estrategias</strong> para ver el canvas mensual de comms.`;
+        const norm = aiNormalize(q);
+        const detectors = [
+          () => aiDetectNext(norm),
+          () => aiDetectByAgency(norm),
+          () => aiDetectByOwner(norm),
+          () => aiDetectByDate(norm),
+          () => aiDetectByType(norm),
+        ];
+        for (const d of detectors) {
+          try { const r = d(); if (r) return r; } catch(e) { console.warn('AI detector error:', e); }
+        }
+        // Canned helpers (legacy)
+        if (norm.includes('slot') || norm.includes('libre') || norm.includes('hueco')) return aiAnswerSlots();
+        if (norm.includes('conflict') || norm.includes('solap')) return aiAnswerConflicts();
+        if (norm.includes('atras') || norm.includes('retrasad') || norm.includes('vencid')) return aiAnswerLate();
+        if (norm.includes('sin metric') || norm.includes('falta metric')) return aiAnswerNoMetrics();
+        if (norm.includes('copy') || norm.includes('redactar') || norm.includes('draft')) return aiAnswerCopy();
+        if (norm.includes('cuant') || norm.includes('cantidad')) return aiAnswerCount();
+        return `No entendí del todo la pregunta. Probá con:<div class="ai-suggestion">· <strong>¿Cuándo es el próximo pocket event?</strong><br>· <strong>¿Qué hay esta semana?</strong><br>· <strong>¿Qué tenemos con Innovate?</strong><br>· <strong>Slots libres en junio</strong><br>· <strong>Conflictos próximas 2 semanas</strong></div>O usá <strong>Insights</strong> para el resumen ejecutivo.`;
       }
 
       // ============== DETAIL DRAWER ==============
@@ -4097,7 +4320,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
                 'KPIs ejecutivos del mes: distribución de comunicaciones, audiencias cubiertas, conflictos y slots libres detectados, resumen ejecutivo automatizado. Link al dashboard real de métricas Email + WhatsApp.',
                 'insights', 'Ver insights')}
               ${tabCard('library', '#b45309', '📚 Biblioteca',
-                'Templates de copy reutilizables, briefs y decks, links a recursos externos (Drive, Notion, Figma) y archivo histórico de business cases.',
+                'Biblioteca de documentos, planillas, templates y más recursos del equipo de Partner Marketing AR.',
                 'library', 'Ir a biblioteca')}
               <div class="bg-[#fafbff] rounded-2xl border border-dashed border-[#e4e4e7] p-5 flex flex-col justify-center items-center text-center">
                 <div class="w-10 h-10 rounded-full bg-white border border-[#e4e4e7] flex items-center justify-center mb-3">${ic('lock','w-4 h-4 text-[var(--mid-grey)]')}</div>
@@ -4773,7 +4996,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
           benefits: 'Iniciativas con agencias',
           ai: 'Asistente AI',
           insights: 'Insights & Resumen',
-          library: 'Biblioteca de templates',
+          library: 'Biblioteca Partner Marketing',
         })[v] || 'Hub';
         renderAll();
       }

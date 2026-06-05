@@ -527,8 +527,19 @@
           <button class="btn btn-primary w-full justify-center btn-sm mb-1.5" onclick="openNewActionDrawer()">
             <i data-lucide="plus" class="w-3 h-3"></i>Nueva acción
           </button>
-          <button class="btn btn-secondary w-full justify-center btn-sm" onclick="openBulkUpload()">
+          <button class="btn btn-secondary w-full justify-center btn-sm mb-2" onclick="openBulkUpload()">
             <i data-lucide="upload" class="w-3 h-3"></i>Carga masiva
+          </button>
+          <div class="border-t border-[#e4e4e7] -mx-3 mb-2"></div>
+          <div class="text-[10px] font-bold uppercase tracking-wider text-[var(--mid-grey)] mb-2">Backup local</div>
+          <button class="btn btn-secondary w-full justify-center btn-sm mb-1.5" onclick="exportAllData()" title="Descargar todo el state como JSON">
+            <i data-lucide="download" class="w-3 h-3"></i>Exportar datos
+          </button>
+          <button class="btn btn-secondary w-full justify-center btn-sm mb-1.5" onclick="importAllData()" title="Subir un backup JSON">
+            <i data-lucide="upload-cloud" class="w-3 h-3"></i>Importar backup
+          </button>
+          <button class="btn btn-ghost w-full justify-center btn-xs" onclick="resetAllData()" title="Volver al estado original del HTML">
+            <i data-lucide="rotate-ccw" class="w-3 h-3"></i>Resetear datos
           </button>
         </div>
 
@@ -574,6 +585,7 @@
                 <i data-lucide="search" class="w-4 h-4 text-[var(--mid-grey)]"></i>
                 <input id="searchInput" placeholder="Buscar…" class="bg-transparent text-sm outline-none w-48" />
               </div>
+              <span id="sync-indicator" class="text-[10px] text-[var(--mid-grey)] hidden md:inline-flex items-center gap-1 px-2 py-1.5 rounded-md border border-[#e4e4e7] bg-white" title="Sincronización">⚪ Local</span>
               <button id="role-toggle" class="role-pill" onclick="switchRoleMenu()" title="Cambiar rol de prueba">
                 <span id="role-toggle-icon">🛠️</span><span id="role-toggle-text">Admin</span>
               </button>
@@ -689,7 +701,10 @@
         } catch(e) {}
         return JSON.parse(JSON.stringify(DEFAULT_INITIATIVE_TYPES));
       })();
-      function saveInitiativeTypes() { localStorage.setItem('pmh_initiative_types', JSON.stringify(BENEFIT_TYPES)); }
+      function saveInitiativeTypes() {
+        localStorage.setItem('pmh_initiative_types', JSON.stringify(BENEFIT_TYPES));
+        api_saveConfig('initiative_types', BENEFIT_TYPES);
+      }
 
       // Caps configurables por admin (default por tipo). Period: 'mensual' | 'bimestral' | 'trimestral' | 'sin_limite'.
       const DEFAULT_BENEFIT_CAPS = {
@@ -858,8 +873,14 @@
         },
         search: '',
         stratMonth: today.toISOString().slice(0,7),
-        items: [...SEED],
-        benefits: [...SEED_BENEFITS],
+        items: (() => {
+          try { const saved = JSON.parse(localStorage.getItem('pmh_items')); if (Array.isArray(saved) && saved.length > 0) return saved; } catch(e) {}
+          return [...SEED];
+        })(),
+        benefits: (() => {
+          try { const saved = JSON.parse(localStorage.getItem('pmh_benefits')); if (Array.isArray(saved) && saved.length > 0) return saved; } catch(e) {}
+          return [...SEED_BENEFITS];
+        })(),
         benefit_caps: (() => {
           try { const saved = JSON.parse(localStorage.getItem('pmh_caps')); if (saved) return saved; } catch(e) {}
           return JSON.parse(JSON.stringify(DEFAULT_BENEFIT_CAPS));
@@ -885,6 +906,214 @@
         }).length;
       }
       function isAdmin() { return state.role === 'admin'; }
+
+      // ============== BACKEND API (Fase 2 Lite) ==============
+      // Vive en el mismo dominio que el HTML (Vercel). Las rutas son /api/items, /api/benefits, etc.
+      const API_BASE = ''; // mismo origin
+      const API_AVAILABLE = (() => {
+        // Detecta si estamos en Vercel (con backend) o local file
+        try { return location.protocol === 'http:' || location.protocol === 'https:'; }
+        catch(e) { return false; }
+      })();
+
+      // Indicador visual de sincronización en el top bar
+      function setSyncStatus(status, msg) {
+        const el = document.getElementById('sync-indicator');
+        if (!el) return;
+        const config = {
+          syncing: { dot: '🟡', text: msg || 'Sincronizando…' },
+          ok:      { dot: '🟢', text: msg || 'Sincronizado' },
+          error:   { dot: '🔴', text: msg || 'Error de conexión' },
+          offline: { dot: '⚪', text: msg || 'Sin backend (local)' },
+        };
+        const c = config[status] || config.ok;
+        el.textContent = c.dot + ' ' + c.text;
+        el.title = c.text;
+      }
+
+      async function api(method, path, body) {
+        if (!API_AVAILABLE) return null;
+        const opts = { method, headers: {'Content-Type':'application/json'} };
+        if (body !== undefined) opts.body = JSON.stringify(body);
+        const res = await fetch(API_BASE + path, opts);
+        if (!res.ok) throw new Error(`API ${method} ${path} → ${res.status}`);
+        return res.json();
+      }
+
+      // Save individual con manejo de error optimista (el state local ya cambió)
+      async function api_saveItem(item)       { try { setSyncStatus('syncing'); await api('POST', '/api/items', item); setSyncStatus('ok'); } catch(e) { setSyncStatus('error', '⚠️ No se pudo guardar al servidor'); console.error(e); } }
+      async function api_deleteItem(id)       { try { setSyncStatus('syncing'); await api('DELETE', '/api/items?id=' + encodeURIComponent(id)); setSyncStatus('ok'); } catch(e) { setSyncStatus('error'); console.error(e); } }
+      async function api_saveBenefit(b)       { try { setSyncStatus('syncing'); await api('POST', '/api/benefits', b); setSyncStatus('ok'); } catch(e) { setSyncStatus('error'); console.error(e); } }
+      async function api_deleteBenefit(id)    { try { setSyncStatus('syncing'); await api('DELETE', '/api/benefits?id=' + encodeURIComponent(id)); setSyncStatus('ok'); } catch(e) { setSyncStatus('error'); console.error(e); } }
+      async function api_saveLibrary(it)      { try { setSyncStatus('syncing'); await api('POST', '/api/library', it); setSyncStatus('ok'); } catch(e) { setSyncStatus('error'); console.error(e); } }
+      async function api_deleteLibrary(id)    { try { setSyncStatus('syncing'); await api('DELETE', '/api/library?id=' + encodeURIComponent(id)); setSyncStatus('ok'); } catch(e) { setSyncStatus('error'); console.error(e); } }
+      async function api_saveConfig(key, val) { try { setSyncStatus('syncing'); await api('POST', '/api/config', {key, value: val}); setSyncStatus('ok'); } catch(e) { setSyncStatus('error'); console.error(e); } }
+
+      // Carga inicial · trae todo desde el backend y reemplaza el state.
+      // Si no hay backend (file:// local), conserva el seed embebido.
+      async function loadFromBackend() {
+        if (!API_AVAILABLE) { setSyncStatus('offline'); return; }
+        try {
+          setSyncStatus('syncing', 'Cargando…');
+          const [items, benefits, library, config] = await Promise.all([
+            api('GET', '/api/items'),
+            api('GET', '/api/benefits'),
+            api('GET', '/api/library'),
+            api('GET', '/api/config'),
+          ]);
+          if (Array.isArray(items) && items.length) {
+            state.items = items.map(normalizeItemFromAPI);
+          }
+          if (Array.isArray(benefits) && benefits.length) {
+            state.benefits = benefits.map(normalizeBenefitFromAPI);
+          }
+          if (Array.isArray(library) && library.length) {
+            const grouped = {};
+            for (const li of library) {
+              const tab = li.tab || 'templates';
+              (grouped[tab] = grouped[tab] || []).push({
+                id: li.id, titulo: li.titulo, desc: li.description, content: li.content,
+                url: li.url, metricas: li.metricas, fecha: li.fecha, icon: li.icon,
+                tipo: li.tipo, size: li.size, usos: li.usos,
+              });
+            }
+            for (const k of Object.keys(grouped)) libraryData[k] = grouped[k];
+          }
+          if (config && typeof config === 'object') {
+            if (config.initiative_types) {
+              Object.keys(BENEFIT_TYPES).forEach(k => delete BENEFIT_TYPES[k]);
+              Object.assign(BENEFIT_TYPES, config.initiative_types);
+            }
+            if (config.library_labels) {
+              Object.keys(libTabLabels).forEach(k => delete libTabLabels[k]);
+              Object.assign(libTabLabels, config.library_labels);
+            }
+            if (config.benefit_caps) state.benefit_caps = config.benefit_caps;
+          }
+          setSyncStatus('ok');
+          renderAll();
+        } catch(e) {
+          console.error('Error cargando del backend:', e);
+          setSyncStatus('error', 'No conecta al servidor · usando datos locales');
+        }
+      }
+
+      function normalizeItemFromAPI(it) {
+        // Las JSONB de Postgres pueden venir como objects o como strings, normalizar
+        ['audiencia','canales','owners','links','kpis','metadata'].forEach(f => {
+          if (typeof it[f] === 'string') {
+            try { it[f] = JSON.parse(it[f]); } catch(e) { it[f] = []; }
+          }
+        });
+        // Fecha de Postgres viene como 'YYYY-MM-DDTHH:MM:SS' o 'YYYY-MM-DD'
+        if (it.fecha && typeof it.fecha === 'string') it.fecha = it.fecha.slice(0,10);
+        if (it.fecha_fin && typeof it.fecha_fin === 'string') it.fecha_fin = it.fecha_fin.slice(0,10);
+        return it;
+      }
+      function normalizeBenefitFromAPI(b) {
+        ['custom_fields','metadata'].forEach(f => {
+          if (typeof b[f] === 'string') {
+            try { b[f] = JSON.parse(b[f]); } catch(e) { b[f] = []; }
+          }
+        });
+        if (b.fecha_objetivo && typeof b.fecha_objetivo === 'string') b.fecha_objetivo = b.fecha_objetivo.slice(0,10);
+        if (b.fecha_publicado && typeof b.fecha_publicado === 'string') b.fecha_publicado = b.fecha_publicado.slice(0,10);
+        return b;
+      }
+
+      // Polling: refresca desde el backend cada 60 segundos para ver cambios de otros usuarios
+      setInterval(() => {
+        if (API_AVAILABLE && !document.hidden) loadFromBackend();
+      }, 60000);
+
+      // ============== PERSISTENCIA (localStorage cache + backend sync) ==============
+      // Guarda items + benefits en localStorage. Llamado en cada renderAll.
+      let _saveTimer = null;
+      function saveStateToStorage() {
+        // Debounce 300ms para no saturar localStorage
+        if (_saveTimer) clearTimeout(_saveTimer);
+        _saveTimer = setTimeout(() => {
+          try {
+            localStorage.setItem('pmh_items', JSON.stringify(state.items));
+            localStorage.setItem('pmh_benefits', JSON.stringify(state.benefits));
+          } catch(e) {
+            console.warn('No se pudo persistir state a localStorage:', e);
+            toast('⚠️ Espacio de localStorage lleno · exportá un backup');
+          }
+        }, 300);
+      }
+      // Exportar todo el state a un JSON descargable
+      function exportAllData() {
+        const data = {
+          version: 1,
+          exported_at: new Date().toISOString(),
+          items: state.items,
+          benefits: state.benefits,
+          benefit_types: BENEFIT_TYPES,
+          benefit_caps: state.benefit_caps,
+          library_data: libraryData,
+          library_labels: libTabLabels,
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json;charset=utf-8'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `partner-mkt-hub-backup-${today.toISOString().slice(0,10)}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast('📥 Backup descargado · guardalo en Drive');
+      }
+      // Importar JSON exportado anteriormente
+      function importAllData() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json,application/json';
+        input.onchange = e => {
+          const file = e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = ev => {
+            try {
+              const data = JSON.parse(ev.target.result);
+              if (!data.items || !data.benefits) throw new Error('JSON inválido: faltan items o benefits');
+              if (!confirm(`¿Reemplazar TODOS los datos actuales con el backup?\n\nEl backup tiene ${data.items.length} items y ${data.benefits.length} iniciativas.\n\nEsta acción no se puede deshacer (pero podés exportar antes).`)) return;
+              state.items = data.items;
+              state.benefits = data.benefits;
+              if (data.benefit_caps) state.benefit_caps = data.benefit_caps;
+              if (data.benefit_types) {
+                Object.keys(BENEFIT_TYPES).forEach(k => delete BENEFIT_TYPES[k]);
+                Object.assign(BENEFIT_TYPES, data.benefit_types);
+                saveInitiativeTypes();
+              }
+              if (data.library_data) { libraryData = data.library_data; saveLibrary(); }
+              if (data.library_labels) {
+                Object.keys(libTabLabels).forEach(k => delete libTabLabels[k]);
+                Object.assign(libTabLabels, data.library_labels);
+                saveLibLabels();
+              }
+              saveStateToStorage();
+              renderAll();
+              toast(`✅ Backup restaurado · ${data.items.length} items + ${data.benefits.length} iniciativas`);
+            } catch(err) {
+              toast('❌ Error al importar: ' + err.message);
+            }
+          };
+          reader.readAsText(file);
+        };
+        input.click();
+      }
+      // Resetear al seed embebido en el HTML (descartar cambios locales)
+      function resetAllData() {
+        if (!confirm('⚠️ ¿Resetear TODOS los datos al estado original del HTML?\n\nVas a perder todos tus cambios locales (items editados, comms nuevas, iniciativas creadas).\n\nSugerencia: exportá primero un backup.')) return;
+        if (!confirm('Última confirmación: estás 100% seguro?')) return;
+        localStorage.removeItem('pmh_items');
+        localStorage.removeItem('pmh_benefits');
+        localStorage.removeItem('pmh_initiative_types');
+        localStorage.removeItem('pmh_library');
+        localStorage.removeItem('pmh_library_labels');
+        localStorage.removeItem('pmh_caps');
+        location.reload();
+      }
 
       // ============== HELPER: BENEFITS → CALENDAR ==============
       function benefitToVirtualItem(b) {
@@ -1986,6 +2215,7 @@
         it.status = checked ? 'enviado' : 'programado';
         renderAll();
         toast(checked ? '✅ Marcada como enviada' : '↩️ Vuelta a programada');
+        api_saveItem(it); // sync
       }
 
       // ============== LIST VIEW ==============
@@ -2218,7 +2448,10 @@
         return JSON.parse(JSON.stringify(DEFAULT_LIB_TAB_LABELS));
       })();
       function saveLibrary() { localStorage.setItem('pmh_library', JSON.stringify(libraryData)); }
-      function saveLibLabels() { localStorage.setItem('pmh_library_labels', JSON.stringify(libTabLabels)); }
+      function saveLibLabels() {
+        localStorage.setItem('pmh_library_labels', JSON.stringify(libTabLabels));
+        api_saveConfig('library_labels', libTabLabels);
+      }
       let libTab = Object.keys(libTabLabels)[0] || 'templates';
 
       function renderLibrary() {
@@ -2281,6 +2514,7 @@
         saveLibrary();
         renderAll();
         toast('🗑️ Eliminado');
+        api_deleteLibrary(id);
       }
       function libManageTabs() {
         if (!isAdmin()) return;
@@ -2450,15 +2684,19 @@
         if (document.getElementById('lib-url')) { data.url = document.getElementById('lib-url').value; data.icon = 'link'; }
         if (document.getElementById('lib-metricas')) { data.metricas = document.getElementById('lib-metricas').value; data.icon = 'trophy'; data.fecha = today.toISOString().slice(0,7); }
         if (!libraryData[tab]) libraryData[tab] = [];
+        let savedItem;
         if (id) {
-          Object.assign(libraryData[tab].find(x=>x.id===id), data);
+          savedItem = libraryData[tab].find(x=>x.id===id);
+          Object.assign(savedItem, data);
         } else {
-          libraryData[tab].push({ id: slug(), tipo: tab, ...data });
+          savedItem = { id: slug(), tipo: tab, ...data };
+          libraryData[tab].push(savedItem);
         }
         saveLibrary();
         closeLibModal();
         renderAll();
         toast('✅ Guardado');
+        api_saveLibrary({ id: savedItem.id, tab, titulo: savedItem.titulo, description: savedItem.desc, content: savedItem.content, url: savedItem.url, metricas: savedItem.metricas, fecha: savedItem.fecha, icon: savedItem.icon, tipo: savedItem.tipo, size: savedItem.size, usos: savedItem.usos });
       }
       function closeLibModal() { document.getElementById('lib-modal').classList.remove('open'); }
 
@@ -3219,7 +3457,8 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
         const it = state.items.find(x => x.id===id); if (!it) return;
         it.status = s;
         renderAll(); toast('✅ Status actualizado: ' + SUB_STATUS_LABELS[s]);
-        openDetail(id); // re-render drawer
+        api_saveItem(it); // sync
+        openDetail(id);
       }
 
       // ============== SMART CONTEXTUAL IA ACTIONS ==============
@@ -3504,6 +3743,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
         const copy = {...it, id: slug(), titulo: it.titulo + ' (copia)', status: 'backlog'};
         state.items.push(copy);
         renderAll(); toast('✅ Duplicado'); closeAllDrawers();
+        api_saveItem(copy);
       }
       function quickEditDate(id) {
         const it = state.items.find(x => x.id===id); if (!it) return;
@@ -3513,6 +3753,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
         it.fecha = newDate || null;
         renderAll();
         toast('📅 Fecha actualizada');
+        api_saveItem(it);
       }
       function quickEditStatus(id) {
         const it = state.items.find(x => x.id===id); if (!it) return;
@@ -3521,7 +3762,11 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
         if (choice === null) return;
         const idx = parseInt(choice)-1;
         const keys = Object.keys(SUB_STATUS_LABELS).filter(k=>k);
-        if (idx >= 0 && idx < keys.length) { it.status = keys[idx]; renderAll(); toast('✅ Status: ' + SUB_STATUS_LABELS[keys[idx]]); }
+        if (idx >= 0 && idx < keys.length) {
+          it.status = keys[idx];
+          renderAll(); toast('✅ Status: ' + SUB_STATUS_LABELS[keys[idx]]);
+          api_saveItem(it);
+        }
       }
       function regenerateCopy(id) {
         const it = state.items.find(x => x.id===id); if (!it) return;
@@ -3698,6 +3943,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
           closeAllDrawers();
           toast(`✏️ "${titulo}" actualizada`);
           renderAll();
+          if (it) api_saveItem(it); // sync al backend
         } else {
           data.id = 'new-' + slug();
           data.tag = '';
@@ -3706,6 +3952,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
           toast(`✅ Sumamos "${titulo}" ${fecha?'al '+fmtDate(fecha):'sin fecha'}`);
           if (fecha) { state.cursor = new Date(fecha+'T12:00:00'); state.cursor.setDate(1); }
           renderAll();
+          api_saveItem(data); // sync al backend
         }
       }
       function deleteItem(id, fromDrawer) {
@@ -3716,6 +3963,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
         closeAllDrawers();
         renderAll();
         toast('🗑️ Eliminada');
+        api_deleteItem(id); // sync al backend
       }
       function copyFullItem(id) {
         const it = state.items.find(x => x.id===id);
@@ -3805,6 +4053,14 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
                   <span class="pill" style="background:#fffbeb;color:#92400e">🔒 Uso interno · no compartir fuera de TN</span>
                   <span class="text-xs text-[var(--mid-grey)]">${admin?'🛠️ Estás en modo Admin · podés editar todo':'👀 Estás en modo Visualización · solo lectura'}</span>
                 </div>
+                ${admin ? `
+                  <div class="mt-4 p-3 rounded-xl border border-[#fde68a] bg-[#fffbeb] text-xs text-[#92400e] flex items-start gap-2">
+                    <span class="text-base shrink-0">💾</span>
+                    <div>
+                      <strong>Aviso de persistencia (prototipo)</strong>: tus cambios se guardan en este navegador (localStorage). Sobreviven al refresh ✅, pero <strong>no se sincronizan</strong> a otros dispositivos ni para otros usuarios. Para compartir cambios o tener backup, andá a la sidebar → <strong>Exportar datos</strong> y guardá el JSON en Drive. En Fase 2 (Supabase) esto desaparece y todo se sincroniza automático.
+                    </div>
+                  </div>
+                ` : ''}
               </div>
             </div>
 
@@ -4269,6 +4525,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
         b.etapa = stageId;
         if (stageId === 'publicado' && !b.fecha_publicado && b.fecha_objetivo) b.fecha_publicado = b.fecha_objetivo;
         renderAll();
+        api_saveBenefit(b); // sync
         openBenefitDetail(id);
         toast(`✅ Etapa: ${BENEFIT_STAGES.find(s=>s.id===stageId).label}`);
       }
@@ -4286,6 +4543,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
         closeAllDrawers();
         renderAll();
         toast('🗑️ Eliminado');
+        api_deleteBenefit(id);
       }
       function askBenefitMetrics(id) {
         const b = state.benefits.find(x => x.id === id);
@@ -4492,12 +4750,15 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
         if (editId) {
           const b = state.benefits.find(x => x.id === editId);
           if (b) Object.assign(b, data);
-          closeAllDrawers(); renderAll(); openBenefitDetail(editId);
+          closeAllDrawers(); renderAll();
+          if (b) api_saveBenefit(b);
+          openBenefitDetail(editId);
           toast(`✏️ Slot actualizado · ${data.agencia}`);
         } else {
           data.id = 'ben-' + slug();
           state.benefits.push(data);
           closeAllDrawers(); renderAll();
+          api_saveBenefit(data);
           toast(`✅ Nuevo slot · ${data.agencia}`);
           setTimeout(() => openBenefitDetail(data.id), 300);
         }
@@ -4522,6 +4783,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
       document.querySelectorAll('.nav-item').forEach(n => { n.addEventListener('click', () => setView(n.dataset.view)); });
 
       function renderAll() {
+        saveStateToStorage(); // Auto-persistencia en cada cambio
         renderFilters();
         const c = document.getElementById('content');
         if (state.view === 'landing') c.innerHTML = renderLanding();
@@ -4540,6 +4802,10 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
         localStorage.setItem('pmh_role', 'admin');
       }
       applyRole();
+
+      // Cargar datos desde el backend si está disponible
+      // (si no, usa el seed embebido + lo que esté en localStorage)
+      loadFromBackend();
 
       renderAll();
       if (window.lucide) lucide.createIcons();

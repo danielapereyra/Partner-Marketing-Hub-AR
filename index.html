@@ -1027,6 +1027,8 @@
           renderAll();
           // Ejecutar migración histórica (idempotente · solo si no se hizo antes en este browser)
           setTimeout(() => runHistoricalMigrationV2(), 2000);
+          // Cleanup de duplicados (mayo y anteriores) · idempotente
+          setTimeout(() => runDeduplicationMigration(), 5000);
         } catch(e) {
           console.error('Error cargando del backend:', e);
           setSyncStatus('error', 'No conecta al servidor · usando datos locales');
@@ -1086,6 +1088,81 @@
         if (created || updated) {
           renderAll();
           toast(`📅 Sincronicé histórico ene-may · ${created} nuevos, ${updated} actualizados`);
+        }
+      }
+
+      // Cleanup de duplicados · sólo mayo 2026 y anteriores (junio queda intacto)
+      // - Idempotente con flag
+      // - Match: mismo título (lower+trim) + misma fecha
+      // - Estrategia: dentro de cada grupo de duplicados, conservar el item con MÁS data (campos no-vacíos)
+      //   y eliminar los demás (state.items + DB)
+      async function runDeduplicationMigration() {
+        const FLAG_KEY = 'pmh_dedup_migration_v1_done';
+        if (localStorage.getItem(FLAG_KEY) === 'done') return;
+
+        const CUTOFF = '2026-06-01'; // mayo y anteriores
+        const candidatos = state.items.filter(it => it.fecha && it.fecha < CUTOFF);
+
+        // Agrupar por (titulo_lower_trim | fecha)
+        const groups = {};
+        candidatos.forEach(it => {
+          const key = (it.titulo || '').toLowerCase().trim() + '||' + it.fecha;
+          (groups[key] ||= []).push(it);
+        });
+
+        const dupGroups = Object.entries(groups).filter(([_, list]) => list.length > 1);
+        if (!dupGroups.length) {
+          localStorage.setItem(FLAG_KEY, 'done');
+          console.log('🧹 Cleanup de duplicados: no encontré duplicados en mayo y anteriores.');
+          return;
+        }
+
+        console.log(`🧹 Cleanup de duplicados: ${dupGroups.length} grupos con duplicados en mayo y anteriores. Limpiando…`);
+
+        // Score: cuántos campos tienen data útil
+        const scoreItem = (it) => {
+          let s = 0;
+          const fields = ['contenido', 'copy', 'pilar', 'comentarios', 'formato', 'tag'];
+          fields.forEach(f => { if (it[f] && String(it[f]).trim()) s++; });
+          if (Array.isArray(it.audiencia) && it.audiencia.length) s++;
+          if (Array.isArray(it.canales) && it.canales.length) s++;
+          if (Array.isArray(it.owners) && it.owners.length) s++;
+          if (Array.isArray(it.links) && it.links.length) s += 2; // los links valen más
+          if (it.prioridad) s++;
+          if (it.status && it.status !== 'backlog') s++;
+          return s;
+        };
+
+        let deleted = 0;
+        const toDelete = [];
+        dupGroups.forEach(([key, list]) => {
+          // Ordenar por score descendente, conservar el primero
+          list.sort((a, b) => scoreItem(b) - scoreItem(a));
+          const keep = list[0];
+          const dupes = list.slice(1);
+          console.log(`  · "${keep.titulo.slice(0,50)}" (${keep.fecha}): conservo "${keep.id}", elimino ${dupes.length}: ${dupes.map(d => d.id).join(', ')}`);
+          dupes.forEach(d => toDelete.push(d));
+        });
+
+        // Snapshot de seguridad antes de borrar
+        if (typeof saveBulkSnapshot === 'function') saveBulkSnapshot();
+
+        for (const dup of toDelete) {
+          try {
+            const idx = state.items.findIndex(x => x.id === dup.id);
+            if (idx >= 0) state.items.splice(idx, 1);
+            if (typeof api_deleteItem === 'function') await api_deleteItem(dup.id);
+            deleted++;
+          } catch (e) {
+            console.warn('[dedup] error eliminando', dup.id, e);
+          }
+        }
+
+        localStorage.setItem(FLAG_KEY, 'done');
+        console.log(`✅ Cleanup de duplicados completo · 🗑️ ${deleted} items eliminados (en ${dupGroups.length} grupos)`);
+        if (deleted) {
+          renderAll();
+          toast(`🧹 Eliminé ${deleted} duplicado${deleted===1?'':'s'} histórico${deleted===1?'':'s'} (ene-may)`);
         }
       }
 
@@ -1223,42 +1300,59 @@
 
       // ============== HELPER: BENEFITS → CALENDAR ==============
       function benefitToVirtualItem(b) {
-        const bt = BENEFIT_TYPES[b.tipo_beneficio];
+        // Defensive: si el tipo no está en BENEFIT_TYPES, usar un fallback en vez de crashear
+        const bt = BENEFIT_TYPES[b.tipo_beneficio] || { label: b.tipo_beneficio || 'Iniciativa', icon: 'flag', color: '#6b7280' };
+        const tipoBenef = b.tipo_beneficio || '';
         const stageToStatus = ({ idea:'backlog', briefeado:'briefeado', produccion:'en_proceso', publicado:'finalizado', medido:'enviado' });
-        const cat = b.tipo_beneficio === 'sponsorship' ? 'sponsorship'
-                  : b.tipo_beneficio === 'pocket_event' ? 'pocket_event'
+        // Mapeo extendido: pocket_event/evento_oficina → pocket_event; sponsorship → sponsorship; otros → ugc o big_event
+        const cat = tipoBenef === 'sponsorship' ? 'sponsorship'
+                  : tipoBenef === 'pocket_event' ? 'pocket_event'
+                  : tipoBenef === 'evento_oficina' ? 'big_event'
+                  : tipoBenef === 'webinar_online' ? 'webinar'
+                  : (tipoBenef.startsWith('caso_exito') || tipoBenef.startsWith('success_story')) ? 'business_case'
                   : 'ugc';
         const titulo = (() => {
-          if (b.tipo_beneficio === 'sponsorship') return `Sponsorship · ${b.agencia} en ${b.evento}`;
-          if (b.tipo_beneficio === 'pocket_event') return `Pocket · ${b.agencia} @ ${b.venue||'TBD'}`;
+          if (tipoBenef === 'sponsorship') return `Sponsorship · ${b.agencia||'?'} en ${b.evento||'TBD'}`;
+          if (tipoBenef === 'pocket_event') return `Pocket · ${b.agencia||'?'} @ ${b.venue||'TBD'}`;
+          if (tipoBenef === 'evento_oficina') return `Evento oficina · ${b.agencia||'?'}`;
           const fmt = b.formato ? UGC_FORMATS[b.formato]?.label : '';
-          return `${bt.label} · ${b.agencia}${fmt?' · '+fmt:''}`;
+          return `${bt.label} · ${b.agencia||'?'}${fmt?' · '+fmt:''}`;
         })();
+        // Heredar notas/comentarios para que se vean en el detalle del calendario
         return {
           _benefit_id: b.id,
           id: 'ben-cal-' + b.id,
-          tipo: b.tipo_beneficio === 'pocket_event' || b.tipo_beneficio === 'sponsorship' ? 'accion' : 'accion',
+          tipo: 'accion',
           categoria: cat,
           tag: bt.label.toUpperCase(),
           titulo,
           fecha: b.fecha_publicado || b.fecha_objetivo,
           cluster: 'ALL',
           audiencia: ['Agencies'],
-          canales: b.tipo_beneficio.startsWith('ugc') ? ['Instagram'] : [],
-          formato: b.formato ? UGC_FORMATS[b.formato]?.label : '',
-          pilar: b.pilar ? UGC_PILARES[b.pilar]?.label : '',
+          canales: tipoBenef.startsWith('ugc') ? ['Instagram'] : (tipoBenef === 'webinar_online' ? ['Online'] : []),
+          formato: b.formato ? (UGC_FORMATS[b.formato]?.label || b.formato) : '',
+          pilar: b.pilar ? (UGC_PILARES[b.pilar]?.label || b.pilar) : '',
           contenido: b.headline || b.evento || b.venue || '',
+          copy: b.notas || '',
+          comentarios: b.notas || '',
           status: stageToStatus[b.etapa] || 'backlog',
           prioridad: '',
-          owners: [b.owner_tn].filter(Boolean),
-          links: b.brief_link ? [{label: 'Brief', url: b.brief_link}] : [],
+          owners: [b.owner_tn, b.owner_agencia].filter(Boolean),
+          links: [
+            b.brief_link && { label: 'Brief', url: b.brief_link },
+            b.link_metricas && { label: 'Métricas', url: b.link_metricas },
+          ].filter(Boolean),
           _virtual: true,
         };
       }
       function getAllCalendarItems() {
-        const virtuals = state.benefits
-          .filter(b => b.fecha_publicado || b.fecha_objetivo)
-          .map(benefitToVirtualItem);
+        const virtuals = (state.benefits || [])
+          .filter(b => b && (b.fecha_publicado || b.fecha_objetivo))
+          .map(b => {
+            try { return benefitToVirtualItem(b); }
+            catch(e) { console.warn('[calendar] No pude convertir iniciativa', b?.id, e); return null; }
+          })
+          .filter(Boolean);
         return [...state.items, ...virtuals];
       }
 
@@ -1666,7 +1760,24 @@
               return (order[statusOf(a)]||9) - (order[statusOf(b)]||9);
             });
             const isToday = sameDay(c.d, today);
-            const visible = dayItems.slice(0,3);
+            // Priorizar diversidad: si en el día hay acciones Y comms, mostrar al menos 1 de cada
+            const MAX_VIS = 3;
+            const acciones = dayItems.filter(i => i.tipo === 'accion' || i._benefit_id);
+            const comms = dayItems.filter(i => !(i.tipo === 'accion' || i._benefit_id));
+            let visible;
+            if (acciones.length && comms.length) {
+              // Mix: al menos 1 acción + 1 comm, llenar con el tipo más numeroso
+              visible = [acciones[0], comms[0]];
+              if (visible.length < MAX_VIS) {
+                if (acciones.length >= comms.length && acciones.length > 1) visible.push(acciones[1]);
+                else if (comms.length > 1) visible.push(comms[1]);
+              }
+            } else {
+              visible = dayItems.slice(0, MAX_VIS);
+            }
+            const hiddenCount = dayItems.length - visible.length;
+            const hiddenAcciones = acciones.length - visible.filter(i => acciones.includes(i)).length;
+            const hiddenComms = comms.length - visible.filter(i => comms.includes(i)).length;
             const eventsHTML = visible.map(it => {
               const cat = CATEGORIES[it.categoria];
               const st = statusOf(it);
@@ -1686,7 +1797,15 @@
                 <span class="cal-event-title">${isBenefit?'🎁 ':''}${escapeHtml(it.titulo.replace(/^\[[^\]]+\]\s*/, '').replace(/^[⚡]+/,''))}</span>
               </div>`;
             }).join('');
-            const more = dayItems.length > 3 ? `<div class="cal-more" onclick="event.stopPropagation(); openDayList('${key}')">+${dayItems.length-3} más</div>` : '';
+            // "+X más" descriptivo: separa cuántos son acciones y cuántos son comms
+            let moreLabel = '';
+            if (hiddenCount > 0) {
+              const parts = [];
+              if (hiddenAcciones > 0) parts.push(`${hiddenAcciones} ${hiddenAcciones===1?'acción':'acciones'}`);
+              if (hiddenComms > 0) parts.push(`${hiddenComms} ${hiddenComms===1?'comm':'comms'}`);
+              moreLabel = parts.length ? `+${parts.join(' · ')}` : `+${hiddenCount} más`;
+            }
+            const more = hiddenCount > 0 ? `<div class="cal-more" onclick="event.stopPropagation(); openDayList('${key}')">${moreLabel}</div>` : '';
             const cellClickHandler = state.selectMode ? '' : `onclick="openDayList('${key}')"`;
             const dropAttrs = isAdmin() ? `ondragover="calDragOver(event)" ondragleave="calDragLeave(event)" ondrop="calDrop(event, '${key}')"` : '';
             return `<div class="cal-cell ${c.otherMonth?'other-month':''} ${isToday?'today':''}" data-date="${key}" ${cellClickHandler} ${dropAttrs}>

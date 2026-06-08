@@ -185,6 +185,23 @@
         transition: filter 0.12s;
       }
       .cal-event:hover { filter: brightness(0.96); }
+      .cal-event[draggable="true"] { cursor: grab; }
+      .cal-event[draggable="true"]:active { cursor: grabbing; }
+      .cal-event-selected {
+        outline: 2px solid var(--nimbus-blue);
+        outline-offset: 1px;
+        box-shadow: 0 0 0 1px #fff inset;
+      }
+      .cal-select-box {
+        font-size: 13px;
+        line-height: 1;
+        margin-right: 1px;
+      }
+      .cal-cell-drop-over {
+        background: var(--clear-blue) !important;
+        outline: 2px dashed var(--nimbus-blue);
+        outline-offset: -2px;
+      }
       .cal-event-title {
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
       }
@@ -857,6 +874,11 @@
         if (!it.links) it.links = [];
       });
 
+      // ============== MIGRATION V2 · Histórico Enero-Mayo 2026 (de CSVs de Daniela) ==============
+      // 65 items: 28 acciones + 37 comunicaciones. Se ejecuta UNA vez al cargar (flag en localStorage).
+      const HISTORICAL_ITEMS_MIGRATION_V2 = [{"id":"hist-act-2026-01-29-caso-de-xito-justa-petra-x-zurbrand","tipo":"accion","categoria":"business_case","titulo":"⚡CASO DE ÉXITO | JUSTA PETRA x ZURBRAND","fecha":"2026-01-29","cluster":"MM","audiencia":["Merchants","Agencies"],"canales":["LinkedIn"],"formato":"Carrusell","contenido":"Caso de éxito de rediseño","links":[{"url":"#","label":"POSTEO"}],"prioridad":"","status":"finalizado","comentarios":"","owners":["Daniela Pereyra"],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-03-04-pocket-event-we-are-brunch-de-negocios","tipo":"accion","categoria":"pocket_event","titulo":"📆POCKET EVENT WE ARE | Brunch de negocios","fecha":"2026-03-04","cluster":"MM","audiencia":["Merchants"],"canales":["Presencial"],"formato":"Presencial","contenido":"","links":[],"prioridad":"","status":"finalizado","comentarios":"","owners":["Daniela Pereyra Mauro","Dri"],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-03-08-acci-n-d-a-de-la-mujer-hacks","tipo":"accion","categoria":"ugc","titulo":"📽️[ACCIÓN DÍA DE LA MUJER] HACKS","fecha":"2026-03-08","cluster":"ALL","audiencia":["Merchants","Agencies"],"canales":["Instagram"],"formato":"-","contenido":"","links":[{"url":"#","label":"BRIEF CONTENIDO"}],"prioridad":"","status":"finalizado","comentarios":"","owners":["Lara Benvenaste Daniela","Pereyra"],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-03-18-agency-kick-off-2026","tipo":"accion","categoria":"big_event","titulo":"🚀 AGENCY KICK-OFF 2026","fecha":"2026-03-18","cluster":"ALL","audiencia":["Agencies"],"canales":["Presencial"],"formato":"Presencial","contenido":"","links":[{"url":"#","label":"TIMELINE"}],"prioridad":"","status":"finalizado","comentarios":"","owners":["Candela Caamaño Daniela","Pereyra Micaela Belingar"],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-03-18-agency-kick-off-cobertura-en-stories","tipo":"accion","categoria":"ugc","titulo":"[AGENCY KICK OFF] Cobertura en Stories","fecha":"2026-03-18","cluster":"ALL","audiencia":["Merchants","Agencies"],"canales":["Instagram"],"formato":"-","contenido":"Cobertura en vivo del evento","links":[{"url":"#","label":"BRIEF GTM"}],"prioridad":"","status":"finalizado","comentarios":"","owners":[],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-03-19-ugc-x-gif-makers","tipo":"accion","categoria":"ugc","titulo":"📽️UGC x GIF MAKERS","fecha":"2026-03-19","cluster":"ALL","audiencia":["Merchants","Agencies"],"canales":["Instagram"],"formato":"Video","contenido":"Contenido educativo por la agencia partner Gif Makers - theme: design en Tiendanube","links":[{"url":"#","label":"GUIÓN"}],"prioridad":"","status":"finalizado","comentarios":"","owners":["Daniela Pereyra"],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-03-19-agency-kick-off-video-recap","tipo":"accion","categoria":"social_media","titulo":"[AGENCY KICK OFF] Video recap","fecha":"2026-03-19","cluster":"ALL","audiencia":["Merchants","Agencies"],"canales":["Instagram","LinkedIn","YouTube"],"formato":"-","contenido":"Recap de evento","links":[{"url":"#","label":"BRIEF GTM"}],"prioridad":"","status":"finalizado","comentarios":"","owners":[],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-03-25-agency-kick-off-c-psula-vertical-mid-mar","tipo":"accion","categoria":"social_media","titulo":"[AGENCY KICK OFF] Cápsula vertical - Mid Market","fecha":"2026-03-25","cluster":"MM","audiencia":["Merchants","Agencies"],"canales":["LinkedIn"],"formato":"-","contenido":"Insight del evento audiencia MM","links":[],"prioridad":"","status":"finalizado","comentarios":"","owners":[],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-03-28-agency-kick-off-c-psula-entrevista-on-ev","tipo":"accion","categoria":"social_media","titulo":"[AGENCY KICK OFF] Cápsula entrevista on-event con agencia","fecha":"2026-03-28","cluster":"ALL","audiencia":["Merchants","Agencies"],"canales":["Instagram","TikTok","LinkedIn","YouTube"],"formato":"-","contenido":"Entrevistar a 1-2 agencias sobre sus takeaways del evento","links":[],"prioridad":"","status":"finalizado","comentarios":"","owners":[],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-03-31-education-entrenamiento-nube-especial-ho","tipo":"accion","categoria":"webinar","titulo":"[EDUCATION] Entrenamiento Nube | Especial Hot Sale","fecha":"2026-03-31","cluster":"ALL","audiencia":["Merchants"],"canales":["Online"],"formato":"Online","contenido":"","links":[],"prioridad":"P3","status":"finalizado","comentarios":"","owners":["Patricio Casella"],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-04-07-keycity-participaci-n-de-agencies-cena-d","tipo":"accion","categoria":"key_city","titulo":"[KEYCITY] Participación de Agencies  | Cena de Líderes MDQ","fecha":"2026-04-07","cluster":"MM","audiencia":["Merchants"],"canales":["Presencial"],"formato":"Presencial","contenido":"","links":[],"prioridad":"P2","status":"finalizado","comentarios":"Ser nexo entre agencias (leren + zas) y events","owners":["Candela Caamaño Micaela","Belingar"],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-04-08-keycity-participaci-n-de-agencies-entren","tipo":"accion","categoria":"key_city","titulo":"[KEYCITY] Participación de Agencies  | Entrenamiento Nube MDQ","fecha":"2026-04-08","cluster":"MM","audiencia":["Merchants"],"canales":["Presencial"],"formato":"Presencial","contenido":"","links":[],"prioridad":"P2","status":"finalizado","comentarios":"Ser nexo entre agencias (leren + zas) y events","owners":["Candela Caamaño Micaela","Belingar"],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-04-10-adoption-webinar-q-a-lanzamiento-partner","tipo":"accion","categoria":"webinar","titulo":"[ADOPTION] Webinar Q&A | Lanzamiento Partner Program","fecha":"2026-04-10","cluster":"ALL","audiencia":["Agencies"],"canales":["Online"],"formato":"Online","contenido":"","links":[{"url":"#","label":"[B&C] Webinar Q&A | Partner Program"}],"prioridad":"P1","status":"finalizado","comentarios":"Acá tenemos que poner el foco en armar presentación, convocatoria y demás.","owners":["Candela Caamaño Daniela","Pereyra"],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-04-13-adoption-sponsorship-tecnomoda-partners","tipo":"accion","categoria":"webinar","titulo":"[ADOPTION] Sponsorship Tecnomoda | Partners","fecha":"2026-04-13","cluster":"ALL","audiencia":["Agencies"],"canales":["Online"],"formato":"Online","contenido":"","links":[],"prioridad":"P1","status":"finalizado","comentarios":"Convocatoria + armado de la presentación","owners":[],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-04-14-education-jornada-de-grabaci-n-nuevos-m-","tipo":"accion","categoria":"other","titulo":"[EDUCATION]  Jornada de grabación | Nuevos módulos Partners Academy","fecha":"2026-04-14","cluster":"ALL","audiencia":["Agencies"],"canales":["Other"],"formato":"Presencial","contenido":"","links":[],"prioridad":"P2","status":"finalizado","comentarios":"","owners":[],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-04-14-ugc-x-krab-e-hot-sale-26","tipo":"accion","categoria":"ugc","titulo":"📽️UGC x KRAB-E [HOT SALE 26]","fecha":"2026-04-14","cluster":"ALL","audiencia":["Merchants"],"canales":["Instagram"],"formato":"Video","contenido":"","links":[{"url":"#","label":"[B&C 2026] Guión Krab-e Hot Sale"}],"prioridad":"P1","status":"finalizado","comentarios":"Esperando entrega del contenido de parte de la agencia","owners":[],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-04-16-demand-gen-webinar-hot-sale-con-gmo","tipo":"accion","categoria":"webinar","titulo":"[DEMAND GEN] Webinar HOT SALE con GMO","fecha":"2026-04-16","cluster":"MM","audiencia":["Merchants"],"canales":["Other"],"formato":"Online","contenido":"","links":[{"url":"#","label":"[MM AR] Webinar MM - Hot Sale 2026"}],"prioridad":"P3","status":"finalizado","comentarios":"","owners":["Alejandra Saavedra"],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-04-20-adoption-sponsorship-d2c-summit-partners","tipo":"accion","categoria":"webinar","titulo":"[ADOPTION] Sponsorship D2C Summit | Partners","fecha":"2026-04-20","cluster":"ALL","audiencia":["Agencies"],"canales":["Online"],"formato":"Online","contenido":"","links":[],"prioridad":"P1","status":"finalizado","comentarios":"Convocatoria + armado de la presentación","owners":[],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-04-20-demand-gen-event-en-oficina-n3rdi","tipo":"accion","categoria":"big_event","titulo":"[DEMAND GEN] Event en oficina | N3RDI","fecha":"2026-04-20","cluster":"ALL","audiencia":["Merchants"],"canales":["Online"],"formato":"Online","contenido":"","links":[],"prioridad":"P2","status":"finalizado","comentarios":"Poco esfuerzo","owners":[],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-04-21-demand-gen-event-cro-ecommerce-lab","tipo":"accion","categoria":"big_event","titulo":"[DEMAND GEN] Event CRO | Ecommerce Lab","fecha":"2026-04-21","cluster":"ALL","audiencia":["Merchants"],"canales":["Online"],"formato":"Online","contenido":"","links":[],"prioridad":"P2","status":"finalizado","comentarios":"No vemos ROI, desestimado","owners":[],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-04-22-adoption-marketing-nube-for-partners-hea","tipo":"accion","categoria":"webinar","titulo":"[ADOPTION]  Marketing Nube for Partners | Heavy Users","fecha":"2026-04-22","cluster":"ALL","audiencia":["Agencies"],"canales":["Online"],"formato":"Online","contenido":"","links":[{"url":"#","label":"[PMM] MA Agencies Enablement Sessions Plan"}],"prioridad":"P1","status":"finalizado","comentarios":"Foco en convocatoria y deck.","owners":[],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-04-27-adoption-sponsorship-entrenamiento-nube-","tipo":"accion","categoria":"webinar","titulo":"[ADOPTION] Sponsorship Entrenamiento Nube | Partners","fecha":"2026-04-27","cluster":"ALL","audiencia":["Agencies"],"canales":["Online"],"formato":"Online","contenido":"","links":[],"prioridad":"P1","status":"finalizado","comentarios":"Convocatoria + armado de la presentación","owners":[],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-04-28-demand-gen-pocket-event-innew","tipo":"accion","categoria":"pocket_event","titulo":"[DEMAND GEN] Pocket Event | Innew","fecha":"2026-04-28","cluster":"MM","audiencia":["Merchants"],"canales":["Presencial"],"formato":"Presencial","contenido":"","links":[{"url":"#","label":"[B&C-AR] Pocket Event | Junio con Innovate"}],"prioridad":"P1","status":"finalizado","comentarios":"","owners":[],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-05-08-cde-x-estudio-volando-success-story","tipo":"accion","categoria":"business_case","titulo":"📽️CDE x  ESTUDIO VOLANDO [SUCCESS STORY]","fecha":"2026-05-08","cluster":"ALL","audiencia":["Agencies","Merchants"],"canales":["Instagram"],"formato":"Video","contenido":"","links":[],"prioridad":"P3","status":"finalizado","comentarios":"","owners":[],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-05-20-adoption-workshops-vip-con-agencias","tipo":"accion","categoria":"webinar","titulo":"[ADOPTION] Workshops VIP con Agencias","fecha":"2026-05-20","cluster":"SMBs","audiencia":["Agencies"],"canales":["Presencial"],"formato":"Presencial","contenido":"","links":[{"url":"#","label":"[B&C] Partner Marketing | Iniciativas SMBs"}],"prioridad":"P1","status":"finalizado","comentarios":"","owners":[],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-05-21-adoption-workshops-infracommerce-new-age","tipo":"accion","categoria":"webinar","titulo":"[ADOPTION] Workshops Infracommerce | New Agency","fecha":"2026-05-21","cluster":"MM","audiencia":["Agencies"],"canales":["Presencial"],"formato":"Presencial","contenido":"","links":[],"prioridad":"P2","status":"finalizado","comentarios":"","owners":[],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-05-21-demand-gen-webinar-online-brainsted","tipo":"accion","categoria":"webinar","titulo":"[DEMAND GEN] Webinar online | Brainsted","fecha":"2026-05-21","cluster":"ALL","audiencia":["Merchants"],"canales":["Online"],"formato":"Online","contenido":"","links":[{"url":"#","label":"[Brainsted] Workshop"}],"prioridad":"P3","status":"finalizado","comentarios":"Poco esfuerzo","owners":[],"_source_section":"historical_migration_v2_actions"},{"id":"hist-act-2026-05-27-education-marketing-nube-for-partners-ea","tipo":"accion","categoria":"webinar","titulo":"[EDUCATION]  Marketing Nube for Partners | Early Users","fecha":"2026-05-27","cluster":"ALL","audiencia":["Agencies"],"canales":["Presencial"],"formato":"Oficinas","contenido":"","links":[{"url":"#","label":"[PMM] MA Agencies Enablement Sessions Plan"}],"prioridad":"P1","status":"finalizado","comentarios":"Sala reservada  (10 a 13hs). Foco en convocatoria, armado del evento, merch y deck.","owners":[],"_source_section":"historical_migration_v2_actions"},{"id":"hist-comm-2026-01-30-newsletter-enero","tipo":"comunicacion","categoria":"newsletter","titulo":"NEWSLETTER Enero","fecha":"2026-01-30","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"","contenido":"","comentarios":"","links":[],"status":"finalizado","owners":["Daniela Pereyra"],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-02-11-comm-chat-nube","tipo":"comunicacion","categoria":"email","titulo":"Comm CHAT NUBE","fecha":"2026-02-11","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"","contenido":"","comentarios":"","links":[{"url":"https://app.hubspot.com/email/8180620/details/206460417919/performance","label":"HubSpot"}],"status":"finalizado","owners":["Daniela Pereyra"],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-02-13-comm-ventas-b2b","tipo":"comunicacion","categoria":"email","titulo":"Comm Ventas B2B","fecha":"2026-02-13","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"Lanzamiento de funcionalidad B2B","contenido":"CONTENIDO B2B","comentarios":"[Agencias] Comm ventas B2B","links":[{"url":"https://app.hubspot.com/email/8180620/details/207515921995/performance","label":"HubSpot"}],"status":"finalizado","owners":["Daniela Pereyra"],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-02-20-invitaci-n-pocket-event-con-we-are-mar","tipo":"comunicacion","categoria":"email","titulo":"Invitación pocket event con We Are | MAR","fecha":"2026-02-20","cluster":"MM","audiencia":["Merchants"],"canales":["Email"],"pilar":"Invitación a leads pocket event con We Are","contenido":"","comentarios":"[B&C AR | Agencias] Invitación pocket event con We Are | MAR","links":[{"url":"https://app.hubspot.com/email/8180620/details/208035951792/performance","label":"HubSpot"}],"status":"finalizado","owners":["Daniela Pereyra"],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-02-24-agency-ko-apertura-registros-partners","tipo":"comunicacion","categoria":"email","titulo":"[AGENCY KO] Apertura registros | Partners","fecha":"2026-02-24","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"Primera convocatoria oficial para big event Agency Kick-off 2026","contenido":"MENSAJES CONVOCATORIA","comentarios":"[Agencias] Invitación agency KO | PARTNERS","links":[{"url":"https://app.hubspot.com/email/8180620/details/207927293084/performance","label":"HubSpot"}],"status":"finalizado","owners":["Daniela Pereyra"],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-02-24-agency-ko-apertura-registros-leads","tipo":"comunicacion","categoria":"email","titulo":"[AGENCY KO] Apertura registros | Leads","fecha":"2026-02-24","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"Primera convocatoria oficial para big event Agency Kick-off 2026","contenido":"MENSAJES CONVOCATORIA","comentarios":"[Agencias] Invitación agency KO | PROSPECTS","links":[{"url":"https://app.hubspot.com/email/8180620/details/208168322661/performance","label":"HubSpot"}],"status":"finalizado","owners":["Daniela Pereyra"],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-02-25-newsletter-febrero","tipo":"comunicacion","categoria":"newsletter","titulo":"NEWSLETTER Febrero","fecha":"2026-02-25","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"- Nubecommerce 2026: key takeaways + principal CTA (descarga)\n- Actualizaciones en Partners Academy + CTA secundario (ir a plataforma)\n- Product Updates: B2B","contenido":"CONTENIDO NEWSLETTER FEB","comentarios":"[Agencias] Newsletter Febrero","links":[{"url":"https://app.hubspot.com/email/8180620/details/206712722768/performance","label":"HubSpot"}],"status":"finalizado","owners":["Daniela Pereyra"],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-02-25-lanzamiento-nubecommerce","tipo":"comunicacion","categoria":"whatsapp","titulo":"Lanzamiento Nubecommerce","fecha":"2026-02-25","cluster":"ALL","audiencia":["Partners"],"canales":["WhatsApp"],"pilar":"Nubecommerce 2026: key takeaways + principal CTA descarga","contenido":"CONTENIDO COMMS","comentarios":"","links":[],"status":"finalizado","owners":["Daniela Pereyra"],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-03-06-aviso-sello-certificaci-n","tipo":"comunicacion","categoria":"whatsapp","titulo":"Aviso Sello Certificación","fecha":"2026-03-06","cluster":"ALL","audiencia":["Partners"],"canales":["Email","WhatsApp"],"pilar":"Descontinuación sello de agencia certificada","contenido":"Mensaje: no vamos a tener más el sello de Agencia Certificada.\nObjetivo: enviar una comunicación a las agencias a las que se lo habíamos entregado para avisarles que ya no será válido.","comentarios":"[Agencies AR] Descontinuación sello agencia certificada | 13/3","links":[{"url":"https://app.hubspot.com/email/8180620/details/209217490805/performance","label":"HubSpot"}],"status":"finalizado","owners":["Daniela Pereyra Agustina","Carra"],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-03-27-t-c-cambios","tipo":"comunicacion","categoria":"whatsapp","titulo":"T&C Cambios","fecha":"2026-03-27","cluster":"ALL","audiencia":["Partners"],"canales":["Email","WhatsApp"],"pilar":"Comunicación actualización T&C: Para tener mapeado, el nuevo programa implicará cambios en los T&C. La modificación será post lanzamiento. En esa oportunidad vamos a tener que hacer una comunicación masiva por email avisando los cambios. En los próximos días, desde el equipo global me compartiran key messages para esta comunicación (estan siendo alineados con el team legal). Cuando tenga más info, la comparto.","contenido":"TBD Agustina Carra","comentarios":"","links":[],"status":"backlog","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-03-30-comm-sobre-actualizaci-n-de-info-para-co","tipo":"comunicacion","categoria":"whatsapp","titulo":"Comm sobre actualización de info para cobro de comisiones","fecha":"2026-03-30","cluster":"ALL","audiencia":["Partners"],"canales":["WhatsApp","Email"],"pilar":"Actualizar CUIT y datos de facturación +  cargar facturas sin IVA","contenido":"CONTENIDO COMM","comentarios":"[Agencies AR] Actualización de datos comisiones","links":[{"url":"https://app.hubspot.com/email/8180620/details/210206764471/performance","label":"HubSpot"}],"status":"finalizado","owners":["Daniela Pereyra"],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-07-encuesta-de-product-updates-cc-pm","tipo":"comunicacion","categoria":"email","titulo":"Encuesta de product updates cc PM","fecha":"2026-04-07","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"Encuesta sobre comunicaciones de product updates con PMM","contenido":"CONTENIDO COMM","comentarios":"[Agencies AR] Encuesta de product updates","links":[{"url":"https://8180620.hubspotpreview-na1.com/_hcms/preview/email/210646625305?portalId=8180620&preview_key=eErZZTLG&_preview=true&from_buffer=false&hsPreviewerApp=email&cacheBust=0","label":"HubSpot"}],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-08-webinars-sponsoreos-2026","tipo":"comunicacion","categoria":"email","titulo":"Webinars sponsoreos 2026","fecha":"2026-04-08","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"Comunicar opps de sponsoreo 2026 (tecnomoda, d2c, entrenamiento nube)","contenido":"","comentarios":"","links":[{"url":"https://8180620.hubspotpreview-na1.com/_hcms/preview/email/210765864616?portalId=8180620&preview_key=AOmLItME&_preview=true&from_buffer=false&hsPreviewerApp=email&cacheBust=0","label":"HubSpot"}],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-13-nuevo-flujo-de-comisiones","tipo":"comunicacion","categoria":"email","titulo":"Nuevo flujo de comisiones","fecha":"2026-04-13","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"Pedido de CX - nuevo flujo de cobro de comisiones","contenido":"CONTENIDO COMM","comentarios":"","links":[],"status":"programado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-02-nurturing-nuevo-programa-mail-1","tipo":"comunicacion","categoria":"email","titulo":"Nurturing nuevo programa - Mail 1","fecha":"2026-04-02","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"","contenido":"","comentarios":"[Agencies AR] Nurturing | Partner Program - Email 1","links":[{"url":"https://app.hubspot.com/email/8180620/details/209264607768/","label":"HubSpot"}],"status":"programado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-08-nurturing-nuevo-programa-mail-2","tipo":"comunicacion","categoria":"email","titulo":"Nurturing nuevo programa - Mail 2","fecha":"2026-04-08","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"","contenido":"","comentarios":"[Agencies AR] Nurturing | Partner Program - Email 2","links":[{"url":"https://app.hubspot.com/email/8180620/details/209256562558/","label":"HubSpot"}],"status":"programado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-08-inicio-convocatoria-evento-marketing-nub","tipo":"comunicacion","categoria":"whatsapp","titulo":"Inicio convocatoria - evento Marketing Nube presencial","fecha":"2026-04-08","cluster":"Base segmentada","audiencia":["Partners"],"canales":["Email","WhatsApp"],"pilar":"","contenido":"","comentarios":"","links":[],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-09-inicio-convocatoria-evento-marketing-nub","tipo":"comunicacion","categoria":"whatsapp","titulo":"Inicio convocatoria - evento Marketing Nube online","fecha":"2026-04-09","cluster":"Base segmentada","audiencia":["Partners"],"canales":["WhatsApp","Email"],"pilar":"","contenido":"","comentarios":"","links":[],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-13-nurturing-nuevo-programa-mail-3","tipo":"comunicacion","categoria":"email","titulo":"Nurturing nuevo programa - Mail 3","fecha":"2026-04-13","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"","contenido":"","comentarios":"[Agencies AR] Nurturing | Partner Program - Email 3","links":[{"url":"https://app.hubspot.com/email/8180620/details/209322511544/","label":"HubSpot"}],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-13-nurturing-nuevo-programa-mail-4","tipo":"comunicacion","categoria":"email","titulo":"Nurturing nuevo programa - Mail 4","fecha":"2026-04-13","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"","contenido":"","comentarios":"[Agencies AR] Nurturing | Partner Program - Email 4","links":[{"url":"https://app.hubspot.com/email/8180620/details/209324603720/","label":"HubSpot"}],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-14-follow-up-1-convocatoria-evento-marketin","tipo":"comunicacion","categoria":"whatsapp","titulo":"Follow up 1 convocatoria - evento Marketing Nube online","fecha":"2026-04-14","cluster":"Base segmentada","audiencia":["Partners"],"canales":["WhatsApp","Email"],"pilar":"","contenido":"","comentarios":"","links":[],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-15-follow-up-1-convocatoria-evento-marketin","tipo":"comunicacion","categoria":"whatsapp","titulo":"Follow up 1 convocatoria - evento Marketing Nube presencial","fecha":"2026-04-15","cluster":"Base segmentada","audiencia":["Partners"],"canales":["Email","WhatsApp"],"pilar":"","contenido":"","comentarios":"","links":[],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-17-follow-up-2-convocatoria-evento-marketin","tipo":"comunicacion","categoria":"whatsapp","titulo":"Follow up 2 convocatoria - evento Marketing Nube online","fecha":"2026-04-17","cluster":"Base segmentada","audiencia":["Partners"],"canales":["WhatsApp","Email"],"pilar":"","contenido":"","comentarios":"","links":[],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-17-follow-up-2-convocatoria-evento-marketin","tipo":"comunicacion","categoria":"whatsapp","titulo":"Follow up 2 convocatoria - evento Marketing Nube presencial","fecha":"2026-04-17","cluster":"Base segmentada","audiencia":["Partners"],"canales":["Email","WhatsApp"],"pilar":"","contenido":"","comentarios":"","links":[],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-20-follow-up-3-convocatoria-evento-marketin","tipo":"comunicacion","categoria":"whatsapp","titulo":"Follow up 3 convocatoria - evento Marketing Nube online","fecha":"2026-04-20","cluster":"Base segmentada","audiencia":["Partners"],"canales":["WhatsApp","Email"],"pilar":"","contenido":"","comentarios":"","links":[],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-20-reminder-2d-evento-marketing-nube-online","tipo":"comunicacion","categoria":"whatsapp","titulo":"Reminder -2D - evento Marketing Nube online","fecha":"2026-04-20","cluster":"Base segmentada","audiencia":["Partners"],"canales":["WhatsApp","Email"],"pilar":"","contenido":"","comentarios":"","links":[],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-21-tbd-newsletter-abril-especial-hot-sale","tipo":"comunicacion","categoria":"newsletter","titulo":"[TBD] Newsletter Abril - especial Hot Sale","fecha":"2026-04-21","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"","contenido":"","comentarios":"","links":[],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-22-nurturing-nuevo-programa-mail-5","tipo":"comunicacion","categoria":"email","titulo":"Nurturing nuevo programa - Mail 5","fecha":"2026-04-22","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"","contenido":"","comentarios":"[Agencies AR] Nurturing | Partner Program - Email 5","links":[{"url":"https://app.hubspot.com/email/8180620/details/209342278579/","label":"HubSpot"}],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-22-follow-up-3-convocatoria-evento-marketin","tipo":"comunicacion","categoria":"whatsapp","titulo":"Follow up 3 convocatoria - evento Marketing Nube presencial","fecha":"2026-04-22","cluster":"Base segmentada","audiencia":["Partners"],"canales":["Email","WhatsApp"],"pilar":"","contenido":"","comentarios":"","links":[],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-27-d-a-d-evento-marketing-nube-online","tipo":"comunicacion","categoria":"whatsapp","titulo":"Día D - evento Marketing Nube online","fecha":"2026-04-27","cluster":"Base segmentada","audiencia":["Partners"],"canales":["WhatsApp","Email"],"pilar":"","contenido":"","comentarios":"","links":[],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-28-reminder-2d-evento-marketing-nube-presen","tipo":"comunicacion","categoria":"whatsapp","titulo":"Reminder -2D - evento Marketing Nube presencial","fecha":"2026-04-28","cluster":"Base segmentada","audiencia":["Partners"],"canales":["Email","WhatsApp"],"pilar":"","contenido":"","comentarios":"","links":[],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-28-nurturing-nuevo-programa-mail-6","tipo":"comunicacion","categoria":"email","titulo":"Nurturing nuevo programa - Mail 6","fecha":"2026-04-28","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"","contenido":"","comentarios":"[Agencies AR] Nurturing | Partner Program - Email 6","links":[{"url":"https://app.hubspot.com/email/8180620/details/209372202294/","label":"HubSpot"}],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-29-reminder-1d-evento-marketing-nube-presen","tipo":"comunicacion","categoria":"whatsapp","titulo":"Reminder -1D - evento Marketing Nube presencial","fecha":"2026-04-29","cluster":"Base segmentada","audiencia":["Partners"],"canales":["Email","WhatsApp"],"pilar":"","contenido":"","comentarios":"","links":[],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-05-05-d-a-d-evento-marketing-nube-presencial","tipo":"comunicacion","categoria":"whatsapp","titulo":"Día D - evento Marketing Nube presencial","fecha":"2026-05-05","cluster":"Base segmentada","audiencia":["Partners"],"canales":["Email","WhatsApp"],"pilar":"","contenido":"","comentarios":"","links":[],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-05-11-nurturing-nuevo-programa-mail-7","tipo":"comunicacion","categoria":"email","titulo":"Nurturing nuevo programa - Mail 7","fecha":"2026-05-11","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"","contenido":"","comentarios":"[Agencies AR] Nurturing | Partner Program - Email 7","links":[{"url":"https://app.hubspot.com/email/8180620/details/209372326417/","label":"HubSpot"}],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-14-sponsoreo-tecnomoda-para-agencias","tipo":"comunicacion","categoria":"email","titulo":"Sponsoreo Tecnomoda para Agencias","fecha":"2026-04-14","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"","contenido":"","comentarios":"Sponsoreo Tecnomoda","links":[{"url":"https://app.hubspot.com/email/8180620/details/210981883028/performance","label":"HubSpot"}],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"},{"id":"hist-comm-2026-04-20-sponsoreo-d2c-summit-para-agencias","tipo":"comunicacion","categoria":"email","titulo":"Sponsoreo D2C Summit para Agencias","fecha":"2026-04-20","cluster":"ALL","audiencia":["Partners"],"canales":["Email"],"pilar":"","contenido":"","comentarios":"Sponsoreo D2C Summit","links":[{"url":"https://app.hubspot.com/email/8180620/details/211229397794/performance","label":"HubSpot"}],"status":"finalizado","owners":[],"_source_section":"historical_migration_v2_comms"}];
+
+
       // State
       const state = {
         view: 'landing',
@@ -883,6 +905,9 @@
           return JSON.parse(JSON.stringify(DEFAULT_BENEFIT_CAPS));
         })(),
         role: localStorage.getItem('pmh_role') || null,
+        // Multi-select en calendario
+        selectMode: false,
+        selected: new Set(),
       };
       function saveCapsToStorage() { localStorage.setItem('pmh_caps', JSON.stringify(state.benefit_caps)); }
       // Count benefits used within the cap period
@@ -1000,9 +1025,67 @@
           }
           setSyncStatus('ok');
           renderAll();
+          // Ejecutar migración histórica (idempotente · solo si no se hizo antes en este browser)
+          setTimeout(() => runHistoricalMigrationV2(), 2000);
         } catch(e) {
           console.error('Error cargando del backend:', e);
           setSyncStatus('error', 'No conecta al servidor · usando datos locales');
+        }
+      }
+
+      // Migración histórica V2: enero–mayo 2026 desde los CSVs de Daniela.
+      // - Se ejecuta UNA vez por browser (flag en localStorage)
+      // - Es idempotente: matchea por título+fecha y mergea con safeMerge (no pisa con vacío)
+      // - Si todos los items ya existen y matchean, no hace cambios visibles
+      async function runHistoricalMigrationV2() {
+        const FLAG_KEY = 'pmh_historical_migration_v2_done';
+        if (localStorage.getItem(FLAG_KEY) === 'done') return;
+        if (typeof HISTORICAL_ITEMS_MIGRATION_V2 === 'undefined' || !HISTORICAL_ITEMS_MIGRATION_V2.length) return;
+
+        const items = HISTORICAL_ITEMS_MIGRATION_V2;
+        let created = 0, updated = 0, skipped = 0;
+        console.log(`📅 Migración histórica V2: revisando ${items.length} items (ene-may 2026)…`);
+
+        for (const incoming of items) {
+          try {
+            const tNorm = (incoming.titulo || '').toLowerCase().trim();
+            const fNorm = incoming.fecha || '';
+            // Match exacto por titulo+fecha (case-insensitive)
+            const existing = state.items.find(x =>
+              (x.titulo || '').toLowerCase().trim() === tNorm &&
+              (x.fecha || '') === fNorm
+            );
+            if (existing) {
+              const merged = (typeof safeMerge === 'function')
+                ? safeMerge(existing, incoming)
+                : Object.assign({}, existing, incoming, { id: existing.id });
+              // Detectar si hubo cambios reales (evita writes innecesarios)
+              const changedFields = Object.keys(incoming).filter(k => {
+                if (k === 'id' || k === '_source_section') return false;
+                return JSON.stringify(existing[k]) !== JSON.stringify(merged[k]);
+              });
+              if (changedFields.length > 0) {
+                const idx = state.items.findIndex(x => x.id === existing.id);
+                if (idx >= 0) state.items[idx] = merged;
+                if (typeof api_saveItem === 'function') api_saveItem(merged);
+                updated++;
+              } else {
+                skipped++;
+              }
+            } else {
+              state.items.push(incoming);
+              if (typeof api_saveItem === 'function') api_saveItem(incoming);
+              created++;
+            }
+          } catch (e) {
+            console.warn('[migration-v2] error en item', incoming.titulo, e);
+          }
+        }
+        localStorage.setItem(FLAG_KEY, 'done');
+        console.log(`✅ Migración histórica V2 completa · ✨ ${created} nuevos · 🔄 ${updated} actualizados · ⏭️ ${skipped} sin cambios`);
+        if (created || updated) {
+          renderAll();
+          toast(`📅 Sincronicé histórico ene-may · ${created} nuevos, ${updated} actualizados`);
         }
       }
 
@@ -1567,6 +1650,7 @@
                   ${stCounts.on_hold ? `<span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full" style="background:var(--st-on_hold)"></span>${stCounts.on_hold} on hold</span>` : ''}
                 </div>
                 ${calModeToggleHTML()}
+                ${isAdmin() ? calSelectModeBtnHTML() : ''}
               </div>
             </div>
           `;
@@ -1586,15 +1670,26 @@
             const eventsHTML = visible.map(it => {
               const cat = CATEGORIES[it.categoria];
               const st = statusOf(it);
-              const clickHandler = it._benefit_id ? `openBenefitDetail('${it._benefit_id}')` : `openDetail('${it.id}')`;
-              return `<div class="cal-event cat-${it.categoria}" onclick="event.stopPropagation(); ${clickHandler}" title="${escapeHtml(it.titulo)} · ${STATUSES[st].label}${it._benefit_id?' · Beneficio Agencias':''}">
+              const isBenefit = !!it._benefit_id;
+              const isSelected = state.selected.has(it.id);
+              const clickHandler = state.selectMode && !isBenefit
+                ? `toggleSelectItem('${it.id}')`
+                : (isBenefit ? `openBenefitDetail('${it._benefit_id}')` : `openDetail('${it.id}')`);
+              const dragAttrs = !isBenefit && isAdmin()
+                ? `draggable="true" ondragstart="calDragStart(event, '${it.id}')"`
+                : '';
+              const selectedClass = isSelected ? 'cal-event-selected' : '';
+              return `<div class="cal-event cat-${it.categoria} ${selectedClass}" ${dragAttrs} onclick="event.stopPropagation(); ${clickHandler}" title="${escapeHtml(it.titulo)} · ${STATUSES[st].label}${isBenefit?' · Beneficio Agencias':''}">
+                ${state.selectMode && !isBenefit ? `<span class="cal-select-box">${isSelected?'☑':'☐'}</span>` : ''}
                 <span class="st-dot ${st}"></span>
                 ${ic(cat.icon, 'w-3 h-3 shrink-0')}
-                <span class="cal-event-title">${it._benefit_id?'🎁 ':''}${escapeHtml(it.titulo.replace(/^\[[^\]]+\]\s*/, '').replace(/^[⚡]+/,''))}</span>
+                <span class="cal-event-title">${isBenefit?'🎁 ':''}${escapeHtml(it.titulo.replace(/^\[[^\]]+\]\s*/, '').replace(/^[⚡]+/,''))}</span>
               </div>`;
             }).join('');
             const more = dayItems.length > 3 ? `<div class="cal-more" onclick="event.stopPropagation(); openDayList('${key}')">+${dayItems.length-3} más</div>` : '';
-            return `<div class="cal-cell ${c.otherMonth?'other-month':''} ${isToday?'today':''}" onclick="openDayList('${key}')">
+            const cellClickHandler = state.selectMode ? '' : `onclick="openDayList('${key}')"`;
+            const dropAttrs = isAdmin() ? `ondragover="calDragOver(event)" ondragleave="calDragLeave(event)" ondrop="calDrop(event, '${key}')"` : '';
+            return `<div class="cal-cell ${c.otherMonth?'other-month':''} ${isToday?'today':''}" data-date="${key}" ${cellClickHandler} ${dropAttrs}>
               <span class="cal-daynum">${c.d.getDate()}</span>
               ${eventsHTML}${more}
             </div>`;
@@ -1632,6 +1727,138 @@
         return `<div class="inline-flex bg-white border border-[var(--lightest-grey)] rounded-full p-1">
           ${modes.map(([k,l]) => `<button class="chip ${state.calMode===k?'chip-on':'chip-off'} border-none" onclick="setCalMode('${k}')">${l}</button>`).join('')}
         </div>`;
+      }
+      function calSelectModeBtnHTML() {
+        const active = state.selectMode;
+        return `<button class="btn ${active?'btn-primary':'btn-secondary'} btn-sm" onclick="toggleSelectMode()" title="Activar selección múltiple para borrar/exportar comms en bloque">
+          ${ic(active?'x':'check-square','w-3 h-3')} ${active?'Salir selección':'Seleccionar'}
+        </button>`;
+      }
+      // ============== MULTI-SELECT + DRAG-AND-DROP CALENDARIO ==============
+      function toggleSelectMode() {
+        state.selectMode = !state.selectMode;
+        if (!state.selectMode) state.selected.clear();
+        renderAll();
+        renderBulkSelectionBar();
+      }
+      function toggleSelectItem(id) {
+        if (state.selected.has(id)) state.selected.delete(id);
+        else state.selected.add(id);
+        renderAll();
+        renderBulkSelectionBar();
+      }
+      function clearSelection() {
+        state.selected.clear();
+        renderAll();
+        renderBulkSelectionBar();
+      }
+      function renderBulkSelectionBar() {
+        const old = document.getElementById('bulk-selection-bar');
+        if (old) old.remove();
+        if (!state.selectMode) return;
+        const count = state.selected.size;
+        const bar = document.createElement('div');
+        bar.id = 'bulk-selection-bar';
+        bar.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-[var(--dark-blue)] text-white rounded-full shadow-lg px-4 py-2 flex items-center gap-3';
+        bar.innerHTML = `
+          <span class="text-sm font-semibold">${count} seleccionado${count===1?'':'s'}</span>
+          <div class="w-px h-5 bg-white/30"></div>
+          <button class="btn btn-ghost btn-xs text-white hover:bg-white/10" onclick="bulkExportSelected()" ${count===0?'disabled':''} title="Descargar JSON con los items seleccionados">
+            ${ic('download','w-3 h-3')} Exportar JSON
+          </button>
+          <button class="btn btn-ghost btn-xs text-white hover:bg-white/10" onclick="bulkDeleteSelected()" ${count===0?'disabled':''} title="Eliminar todos los items seleccionados">
+            ${ic('trash-2','w-3 h-3')} Eliminar
+          </button>
+          <div class="w-px h-5 bg-white/30"></div>
+          <button class="btn btn-ghost btn-xs text-white hover:bg-white/10" onclick="clearSelection()" ${count===0?'disabled':''}>
+            Limpiar
+          </button>
+          <button class="btn btn-ghost btn-xs text-white hover:bg-white/10" onclick="toggleSelectMode()">
+            ${ic('x','w-3 h-3')} Salir
+          </button>
+        `;
+        document.body.appendChild(bar);
+        if (window.lucide) lucide.createIcons();
+      }
+      function bulkExportSelected() {
+        const ids = [...state.selected];
+        if (!ids.length) return toast('No hay items seleccionados');
+        const items = state.items.filter(it => ids.includes(it.id));
+        const data = {
+          exported_at: new Date().toISOString(),
+          source: 'calendar_multiselect_export',
+          count: items.length,
+          items,
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `partner-mkt-hub-export-${today.toISOString().slice(0,10)}-${items.length}items.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast(`💾 Exporté ${items.length} items a JSON`);
+      }
+      function bulkDeleteSelected() {
+        const ids = [...state.selected];
+        if (!ids.length) return toast('No hay items seleccionados');
+        const items = state.items.filter(it => ids.includes(it.id));
+        const titlesPreview = items.slice(0, 5).map(it => '· ' + (it.titulo || '(sin título)').slice(0, 50)).join('\n');
+        const more = items.length > 5 ? `\n… y ${items.length - 5} más` : '';
+        if (!confirm(`⚠️ ¿Eliminar ${items.length} item${items.length===1?'':'s'} del hub?\n\n${titlesPreview}${more}\n\nEsta acción se sincroniza con la base de datos. No se puede deshacer fácilmente.`)) return;
+        // Snapshot de seguridad
+        const snapTs = saveBulkSnapshot();
+        let deleted = 0, errors = 0;
+        ids.forEach(id => {
+          try {
+            const idx = state.items.findIndex(x => x.id === id);
+            if (idx >= 0) {
+              state.items.splice(idx, 1);
+              if (typeof api_deleteItem === 'function') api_deleteItem(id);
+              deleted++;
+            }
+          } catch(e) {
+            console.error(`[bulk-delete] error con item ${id}:`, e);
+            errors++;
+          }
+        });
+        state.selected.clear();
+        renderAll();
+        renderBulkSelectionBar();
+        showPostBulkBanner(snapTs);
+        toast(`🗑️ Eliminé ${deleted} item${deleted===1?'':'s'}${errors?' · '+errors+' errores':''}`);
+      }
+      // ===== DRAG AND DROP =====
+      function calDragStart(ev, itemId) {
+        if (state.selectMode) { ev.preventDefault(); return; }
+        ev.dataTransfer.setData('text/plain', itemId);
+        ev.dataTransfer.effectAllowed = 'move';
+        ev.currentTarget.style.opacity = '0.5';
+      }
+      function calDragOver(ev) {
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = 'move';
+        ev.currentTarget.classList.add('cal-cell-drop-over');
+      }
+      function calDragLeave(ev) {
+        ev.currentTarget.classList.remove('cal-cell-drop-over');
+      }
+      function calDrop(ev, newDate) {
+        ev.preventDefault();
+        ev.currentTarget.classList.remove('cal-cell-drop-over');
+        const itemId = ev.dataTransfer.getData('text/plain');
+        if (!itemId) return;
+        const item = state.items.find(x => x.id === itemId);
+        if (!item) return toast('No encontré el item para mover');
+        if (item.fecha === newDate) return; // misma fecha, no hace falta nada
+        const oldDate = item.fecha;
+        item.fecha = newDate;
+        if (typeof api_saveItem === 'function') api_saveItem(item);
+        renderAll();
+        const oldLabel = oldDate ? fmtDate(oldDate) : 'sin fecha';
+        toast(`📅 Moví "${(item.titulo||'').slice(0,40)}" de ${oldLabel} a ${fmtDate(newDate)}`);
       }
       function renderQuarter(cursor, items) {
           const q = Math.floor(cursor.getMonth() / 3);

@@ -3285,6 +3285,8 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
         const bannerColor = cls.partialMatch.length ? '#fffbeb' : '#ecfdf5';
         const bannerBorder = cls.partialMatch.length ? '#fde68a' : '#bbf7d0';
         const bannerText = cls.partialMatch.length ? '#92400e' : '#166534';
+        // Guardar items en variable global para evitar problemas de escape en onclick
+        window._pendingBulk = { items, source };
         return `<div class="mt-4">
           <div class="p-3 rounded-xl mb-3" style="background:${bannerColor};border:1px solid ${bannerBorder}">
             <p class="text-xs font-semibold" style="color:${bannerText}">${formatLabel ? `✅ Formato detectado: <strong>${formatLabel}</strong> · ` : ''}${items.length} item${items.length>1?'s':''} listos</p>
@@ -3313,10 +3315,26 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
           </div>
           <div class="flex justify-end gap-2">
             <button class="btn btn-ghost" onclick="closeBulkModal()">Cancelar</button>
-            <button class="btn btn-primary" onclick='${saveFn}(${JSON.stringify(JSON.stringify(items))})'>${ic('check','w-4 h-4')} Aplicar bulk al hub</button>
+            <button class="btn btn-primary" onclick="applyPendingBulkUpdate()">${ic('check','w-4 h-4')} Aplicar bulk al hub</button>
           </div>
         </div>`;
       }
+      function applyPendingBulkUpdate() {
+        try {
+          if (!window._pendingBulk) {
+            toast('⚠️ No hay items pendientes para aplicar');
+            console.warn('applyPendingBulkUpdate called without _pendingBulk set');
+            return;
+          }
+          const { items, source } = window._pendingBulk;
+          console.log(`🚀 Aplicando bulk: ${items.length} items, source=${source}`);
+          applyBulkUpdate(items, source);
+        } catch (e) {
+          console.error('❌ Error aplicando bulk:', e);
+          toast('❌ Error al aplicar bulk · revisá la consola (Ctrl+Shift+J)');
+        }
+      }
+      window.applyPendingBulkUpdate = applyPendingBulkUpdate;
       function renderBulkRows(group, kind, source) {
         if (!group.length) return '';
         const icon = kind === 'new' ? '🟢' : kind === 'update' ? '🔵' : '⚠️';
@@ -3353,34 +3371,45 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
       // Aplica un bulk de items: respeta checkboxes individuales del preview, hace safe-merge
       // de los que matchean, crea los nuevos, y deja un snapshot para revertir.
       function applyBulkUpdate(items, source) {
+        console.log(`[bulk] applyBulkUpdate start · ${items.length} items · source=${source}`);
         const cls = classifyBulkItems(items);
+        console.log(`[bulk] classification: ${cls.new.length} new, ${cls.update.length} update, ${cls.partialMatch.length} partial`);
         // Lee los checkboxes del preview
         const checks = document.querySelectorAll(`#bulk-preview input[type="checkbox"][data-bulk-id]`);
         const checkedSet = new Set();
         checks.forEach(c => { if (c.checked) checkedSet.add(c.dataset.bulkId); });
+        console.log(`[bulk] ${checks.length} checkboxes encontrados, ${checkedSet.size} tildados`);
         // Snapshot pre-bulk
         const snapTs = saveBulkSnapshot();
-        let created = 0, updated = 0, skipped = 0;
+        let created = 0, updated = 0, skipped = 0, errors = 0;
         const applyGroup = (group, kind) => {
           group.forEach((g, i) => {
             const dataId = `${source}-${kind}-${i}`;
             if (!checkedSet.has(dataId)) { skipped++; return; }
-            if (kind === 'new') {
-              state.items.push(g.incoming);
-              api_saveItem(g.incoming);
-              created++;
-            } else {
-              const merged = safeMerge(g.existing, g.incoming);
-              const idx = state.items.findIndex(x => x.id === g.existing.id);
-              if (idx >= 0) state.items[idx] = merged;
-              api_saveItem(merged);
-              updated++;
+            try {
+              if (kind === 'new') {
+                state.items.push(g.incoming);
+                api_saveItem(g.incoming);
+                created++;
+              } else {
+                const merged = safeMerge(g.existing, g.incoming);
+                const idx = state.items.findIndex(x => x.id === g.existing.id);
+                if (idx >= 0) state.items[idx] = merged;
+                api_saveItem(merged);
+                updated++;
+              }
+            } catch (e) {
+              console.error(`[bulk] Error procesando item ${dataId}:`, e, g.incoming);
+              errors++;
             }
           });
         };
         applyGroup(cls.new, 'new');
         applyGroup(cls.update, 'update');
         applyGroup(cls.partialMatch, 'partial');
+        console.log(`[bulk] result: ${created} created, ${updated} updated, ${skipped} skipped, ${errors} errors`);
+        // Limpiar variable global
+        window._pendingBulk = null;
         closeBulkModal();
         renderAll();
         // Toast + recovery button
@@ -3388,8 +3417,8 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
         if (created) parts.push(`✨ ${created} nuevos`);
         if (updated) parts.push(`🔄 ${updated} actualizados`);
         if (skipped) parts.push(`⏭️ ${skipped} omitidos`);
+        if (errors) parts.push(`❌ ${errors} errores`);
         toast(parts.join(' · ') || 'Nada que hacer');
-        // Mostrar banner de recovery
         showPostBulkBanner(snapTs);
       }
       function showPostBulkBanner(snapTs) {

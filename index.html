@@ -2773,16 +2773,23 @@ Mayo 2026 - Estrategia partners
                   <button class="btn btn-primary" onclick="bulkParse()">${ic('sparkles','w-4 h-4')} Detectar items con IA</button>
                 </div>
               ` : `
-                <p class="text-sm text-[var(--mid-grey)] mb-3">Tres formas de cargar tu CSV: subir archivo, arrastrar, o pegar las filas. La plantilla con el formato correcto la descargás abajo.</p>
+                <p class="text-sm text-[var(--mid-grey)] mb-3">Subí archivo, arrastrá o pegá las filas. <strong>Auto-detecta el formato</strong>: HubSpot email campaigns (export directo) o plantilla genérica del hub.</p>
+                <div class="p-3 rounded-xl mb-3" style="background:#eff6ff;border:1px solid #dbeafe">
+                  <p class="text-xs font-semibold text-[var(--nimbus-blue)] mb-1">📋 Formatos soportados:</p>
+                  <ul class="text-xs text-[var(--text-dark)] ml-4 list-disc space-y-0.5">
+                    <li><strong>HubSpot CSV</strong> · descarga directa desde HubSpot (Marketing → Email → Analyze → Export). Mapea automáticamente: nombre → título, fecha enviado → fecha, subject → copy, URL → links. Status: finalizado (ya enviado).</li>
+                    <li><strong>Plantilla genérica</strong> · header con <code>tipo,categoria,titulo,fecha,audiencia,canales,status,prioridad,owners,contenido</code>. Descargá la plantilla acá abajo.</li>
+                  </ul>
+                </div>
                 <div class="flex gap-2 mb-3 flex-wrap">
-                  <button class="btn btn-secondary btn-sm" onclick="downloadCSVTemplate()">${ic('download','w-3 h-3')} Descargar plantilla</button>
+                  <button class="btn btn-secondary btn-sm" onclick="downloadCSVTemplate()">${ic('download','w-3 h-3')} Descargar plantilla genérica</button>
                   <button class="btn btn-secondary btn-sm" onclick="document.getElementById('csv-file').click()">${ic('upload','w-3 h-3')} Subir archivo CSV</button>
                   <input type="file" id="csv-file" accept=".csv,.tsv,text/csv,text/tab-separated-values" class="hidden" onchange="readCSVFile(this.files[0])" />
                 </div>
                 <div class="dz mb-3" id="csv-dz" ondragover="event.preventDefault(); this.classList.add('over')" ondragleave="this.classList.remove('over')" ondrop="csvDropped(event)">
                   ${ic('file-up','w-8 h-8 text-[var(--nimbus-blue)] mx-auto block mb-2')}
                   <p class="text-sm font-semibold h-heading">Arrastrá tu CSV acá o pegá las filas debajo</p>
-                  <p class="text-xs text-[var(--mid-grey)] mt-1">UTF-8 · separador coma o tab · hasta 1000 filas</p>
+                  <p class="text-xs text-[var(--mid-grey)] mt-1">UTF-8 · separador coma o tab · hasta 1000 filas · auto-detecta HubSpot vs plantilla genérica</p>
                 </div>
                 <textarea class="textarea font-mono text-xs" rows="9" id="bulk-csv" placeholder="tipo,categoria,titulo,fecha,audiencia,canales,status,prioridad,owners,contenido
 accion,webinar,Webinar Pre Hot Sale,2026-06-03,Merchants,Online,programado,P1,Daniela Pereyra,Webinar para MM
@@ -2908,45 +2915,16 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
           return;
         }
 
+        const cls = classifyBulkItems(parsedItems);
         preview.innerHTML = `
-          <div class="mt-4">
-            <div class="flex items-center justify-between mb-3">
-              <h4 class="font-bold h-heading">✨ Detecté ${parsedItems.length} comunicación${parsedItems.length===1?'':'es'} listas para cargar</h4>
-              ${errors.length ? `<span class="text-xs text-[#b91c1c]">${errors.length} fila${errors.length===1?'':'s'} con error</span>` : ''}
-            </div>
-            <div class="max-h-72 overflow-y-auto scroll-v space-y-2 mb-4 border border-[var(--lightest-grey)] rounded-xl p-3">
-              ${parsedItems.map((it, i) => `
-                <label class="flex items-start gap-3 p-2 rounded-lg hover:bg-[var(--clear-blue-bg)] cursor-pointer">
-                  <input type="checkbox" checked data-i="${i}" class="mt-1" />
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-2 flex-wrap mb-1">
-                      <span class="pill cat-${it.categoria}">${CATEGORIES[it.categoria]?.label || it.categoria}</span>
-                      <span class="text-xs font-semibold text-[var(--mid-grey)]">${it.fecha}</span>
-                      ${it.pilar ? `<span class="text-xs text-[var(--mid-grey)]">${it.pilar}</span>` : ''}
-                    </div>
-                    <div class="text-sm font-semibold text-[var(--dark-blue)]">${escapeHtml(it.titulo)}</div>
-                    ${it.copy ? `<div class="text-xs text-[var(--mid-grey)] truncate-2 mt-1">${escapeHtml(it.copy.slice(0,150))}${it.copy.length>150?'…':''}</div>` : ''}
-                  </div>
-                </label>
-              `).join('')}
-            </div>
-            ${errors.length ? `<details class="mb-3"><summary class="text-xs text-[#b91c1c] font-semibold cursor-pointer">Ver ${errors.length} errores</summary><div class="text-xs text-[var(--mid-grey)] mt-2">${errors.map(e => '· '+escapeHtml(e)).join('<br>')}</div></details>` : ''}
-            <div class="flex justify-end gap-2">
-              <button class="btn btn-ghost" onclick="closeBulkModal()">Cancelar</button>
-              <button class="btn btn-primary" onclick='bulkSaveSheet(${JSON.stringify(JSON.stringify(parsedItems))})'>${ic('check','w-4 h-4')} Sumar al hub</button>
-            </div>
-          </div>
+          ${renderBulkPreview({ items: parsedItems, classification: cls, formatLabel: 'Google Sheet · content-comms', saveFn: 'bulkSaveSheet', source: 'sheet' })}
+          ${errors.length ? `<details class="mt-3"><summary class="text-xs text-[#b91c1c] font-semibold cursor-pointer">Ver ${errors.length} fila${errors.length===1?'':'s'} con error</summary><div class="text-xs text-[var(--mid-grey)] mt-2">${errors.map(e => '· '+escapeHtml(e)).join('<br>')}</div></details>` : ''}
         `;
         if (window.lucide) lucide.createIcons();
       }
       function bulkSaveSheet(jsonStr) {
         const items = JSON.parse(jsonStr);
-        const checks = document.querySelectorAll('#bulk-preview input[type="checkbox"]');
-        const keep = items.filter((_, i) => checks[i] && checks[i].checked);
-        state.items.push(...keep);
-        closeBulkModal();
-        renderAll();
-        toast(`✨ Sumé ${keep.length} comunicaciones al hub desde content-comms`);
+        applyBulkUpdate(items, 'sheet');
       }
 
       function bulkParse() {
@@ -3075,47 +3053,329 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
         const f = e.dataTransfer.files && e.dataTransfer.files[0];
         if (f) readCSVFile(f);
       }
+      // ============== BULK SAFETY HELPERS ==============
+      // Merge conservador: no pisa campos no-vacíos del hub con valores vacíos del incoming
+      function safeMerge(existing, incoming) {
+        const merged = { ...existing };
+        // Scalars: solo actualizar si incoming tiene valor real (no vacío)
+        const scalarFields = ['titulo', 'fecha', 'categoria', 'tipo', 'contenido', 'copy', 'status', 'prioridad', 'pilar', 'comentarios', 'aprobador'];
+        for (const k of scalarFields) {
+          if (incoming[k] !== undefined && incoming[k] !== null && incoming[k] !== '') {
+            merged[k] = incoming[k];
+          }
+        }
+        // Arrays: union (nunca encoge)
+        for (const k of ['audiencia', 'canales', 'owners', 'links']) {
+          const e = existing[k] || [];
+          const i = incoming[k] || [];
+          merged[k] = [...new Set([...e, ...i])];
+        }
+        merged.id = existing.id; // siempre preservar el ID original
+        return merged;
+      }
+      // Clasifica cada item incoming contra el state.items existente.
+      // Devuelve { new: [...], update: [...], partialMatch: [...] }
+      function classifyBulkItems(incomingItems) {
+        const out = { new: [], update: [], partialMatch: [] };
+        incomingItems.forEach(it => {
+          const tNorm = (it.titulo||'').toLowerCase().trim();
+          const fNorm = it.fecha || '';
+          // Match exacto: titulo + fecha
+          const exact = state.items.find(x => (x.titulo||'').toLowerCase().trim() === tNorm && (x.fecha||'') === fNorm);
+          if (exact) { out.update.push({ incoming: it, existing: exact }); return; }
+          // Match parcial: mismo título, fecha distinta (¿renombraste fecha?)
+          const titleMatch = state.items.find(x => (x.titulo||'').toLowerCase().trim() === tNorm);
+          if (titleMatch) { out.partialMatch.push({ incoming: it, existing: titleMatch }); return; }
+          out.new.push({ incoming: it });
+        });
+        return out;
+      }
+      // Snapshot del state actual antes de un bulk → localStorage
+      function saveBulkSnapshot() {
+        const snap = {
+          ts: new Date().toISOString(),
+          items: JSON.parse(JSON.stringify(state.items)),
+          benefits: JSON.parse(JSON.stringify(state.benefits)),
+        };
+        localStorage.setItem('pmh_pre_bulk_snapshot', JSON.stringify(snap));
+        return snap.ts;
+      }
+      function restorePreBulkSnapshot() {
+        const raw = localStorage.getItem('pmh_pre_bulk_snapshot');
+        if (!raw) { toast('⚠️ No hay snapshot pre-bulk para restaurar'); return; }
+        if (!confirm('¿Restaurar el estado del hub al snapshot tomado antes del último bulk?\n\nEsto va a sobrescribir todos los items y iniciativas locales. Los cambios hechos DESPUÉS del bulk se perderán.\n\n¿Continuar?')) return;
+        const snap = JSON.parse(raw);
+        state.items = snap.items;
+        state.benefits = snap.benefits;
+        // Sync each one al backend
+        state.items.forEach(i => api_saveItem(i));
+        state.benefits.forEach(b => api_saveBenefit(b));
+        renderAll();
+        toast(`✅ Estado restaurado al snapshot del ${new Date(snap.ts).toLocaleString('es-AR')}`);
+      }
+      window.restorePreBulkSnapshot = restorePreBulkSnapshot;
+
+      // CSV parser real — respeta comillas y comas embebidas
+      function parseCSVText(text) {
+        const rows = [];
+        let cur = [''];
+        let inQuote = false;
+        for (let i = 0; i < text.length; i++) {
+          const c = text[i];
+          if (inQuote) {
+            if (c === '"') {
+              if (text[i+1] === '"') { cur[cur.length-1] += '"'; i++; }
+              else inQuote = false;
+            } else cur[cur.length-1] += c;
+          } else {
+            if (c === '"' && cur[cur.length-1] === '') inQuote = true;
+            else if (c === ',' || c === '\t') cur.push('');
+            else if (c === '\n' || c === '\r') {
+              if (c === '\r' && text[i+1] === '\n') i++;
+              if (cur.length > 1 || cur[0] !== '') rows.push(cur);
+              cur = [''];
+            } else cur[cur.length-1] += c;
+          }
+        }
+        if (cur.length > 1 || cur[0] !== '') rows.push(cur);
+        return rows.map(r => r.map(c => (c||'').trim()));
+      }
+      // Detecta si es CSV de HubSpot (email campaigns export)
+      function isHubSpotCSV(rows) {
+        if (!rows.length) return false;
+        // Buscar al menos una fila donde col 0 tenga [Algo] o (Algo) y col 1 sea una fecha tipo YYYY-MM-DD
+        return rows.slice(0, 5).some(r => {
+          if (!r[0] || !r[1]) return false;
+          const hasBracket = /\[[^\]]+\]|\([A-Z]/.test(r[0]);
+          const isDate = /^\d{4}-\d{2}-\d{2}/.test(r[1]);
+          return hasBracket && isDate;
+        });
+      }
+      // Mapea una fila HubSpot a un item del hub
+      function hubspotRowToItem(row, idx) {
+        const [name, sentAt, subject, emailType, segment, url] = row.map(s => s || '');
+        // Fecha → YYYY-MM-DD (tomar la parte antes del espacio)
+        const fecha = (sentAt.split(' ')[0] || '').match(/^\d{4}-\d{2}-\d{2}$/) ? sentAt.split(' ')[0] : '';
+        // Audiencia: detectar Agencies/Merchants/Partners en el nombre o segmento
+        const audiencia = [];
+        const allText = `${name} ${segment}`.toLowerCase();
+        if (/agenc/.test(allText)) audiencia.push('Agencies');
+        if (/merchant/.test(allText)) audiencia.push('Merchants');
+        if (/partner/.test(allText) && !audiencia.length) audiencia.push('Partners');
+        if (!audiencia.length) audiencia.push('Partners');
+        // Categoría: si en emailType hay "event" → email igual (es comunicación), pero hay que mantener email
+        const categoria = 'email';
+        const links = url ? [url] : [];
+        return {
+          id: 'hs-' + slug() + '-' + idx,
+          tipo: 'comunicacion',
+          categoria,
+          titulo: name || `(sin nombre · fila ${idx+1})`,
+          fecha: fecha || null,
+          audiencia,
+          canales: ['Email'],
+          status: 'finalizado', // ya enviado (vino de HubSpot histórico)
+          prioridad: '',
+          owners: [],
+          contenido: subject || '',
+          copy: subject || '',
+          links,
+          comentarios: emailType ? `HubSpot · ${emailType}` : 'Importado desde HubSpot CSV',
+          _source_section: 'hubspot_csv',
+        };
+      }
+      // Mapea una fila del formato plantilla genérica
+      function templateRowToItem(obj, idx) {
+        return {
+          id: 'csv-' + slug() + '-' + idx,
+          tipo: obj.tipo || 'comunicacion',
+          categoria: obj.categoria || 'email',
+          titulo: obj.titulo || `(sin título · fila ${idx+1})`,
+          fecha: obj.fecha || null,
+          audiencia: obj.audiencia ? obj.audiencia.split(';').map(s=>s.trim()).filter(Boolean) : [],
+          canales: obj.canales ? obj.canales.split(';').map(s=>s.trim()).filter(Boolean) : [],
+          status: obj.status || 'programado',
+          prioridad: obj.prioridad || '',
+          owners: obj.owners ? obj.owners.split(';').map(s=>s.trim()).filter(Boolean) : [],
+          contenido: obj.contenido || '',
+          copy: obj.copy || '',
+          _source_section: 'csv_upload',
+        };
+      }
       function bulkParseCSV() {
         const csv = document.getElementById('bulk-csv').value.trim();
-        if (!csv) { toast('⚠️ Pegá CSV o subí un archivo primero'); return; }
-        const rows = csv.split(/\n+/);
-        const header = rows.shift().split(',').map(s=>s.trim());
-        const items = rows.map(r => {
-          const cols = r.split(',').map(s=>s.trim());
-          const obj = {}; header.forEach((h,i) => obj[h] = cols[i] || '');
-          return {
-            id: 'csv-' + slug(),
-            tipo: obj.tipo, categoria: obj.categoria, titulo: obj.titulo,
-            fecha: obj.fecha, audiencia: obj.audiencia ? [obj.audiencia] : [],
-            canales: obj.canales ? [obj.canales] : [], status: obj.status,
-            prioridad: obj.prioridad, owners: obj.owners ? [obj.owners] : [],
-            contenido: obj.contenido, _source_section: 'csv_upload',
-          };
-        });
         const preview = document.getElementById('bulk-preview');
-        preview.innerHTML = `<div class="mt-4">
-          <h4 class="font-bold h-heading mb-3">📋 Procesé ${items.length} filas</h4>
-          <div class="max-h-72 overflow-y-auto scroll-v space-y-2 mb-4 border border-[var(--lightest-grey)] rounded-xl p-3">
-            ${items.map(it => `
-              <div class="flex items-center gap-2 text-xs">
-                <span class="pill cat-${it.categoria}">${CATEGORIES[it.categoria]?.label||'?'}</span>
-                <span class="font-mono text-[var(--mid-grey)]">${it.fecha}</span>
-                <span class="font-semibold truncate">${escapeHtml(it.titulo)}</span>
-              </div>
-            `).join('')}
+        if (!csv) { toast('⚠️ Pegá CSV o subí un archivo primero'); return; }
+        let rows;
+        try { rows = parseCSVText(csv); } catch(e) {
+          preview.innerHTML = `<div class="mt-4 p-4 rounded-2xl border border-[#fde2e2] bg-[#fef2f2] text-sm text-[#b91c1c]">⚠️ No pude parsear el CSV: ${escapeHtml(e.message)}</div>`;
+          return;
+        }
+        if (!rows.length) {
+          preview.innerHTML = `<div class="mt-4 p-4 rounded-2xl border border-[#fde2e2] bg-[#fef2f2] text-sm text-[#b91c1c]">⚠️ El CSV no tiene filas válidas.</div>`;
+          return;
+        }
+        // Auto-detectar formato
+        const isHS = isHubSpotCSV(rows);
+        let items = [], formatLabel = '';
+        if (isHS) {
+          formatLabel = 'HubSpot · email campaigns';
+          items = rows.map((r, i) => hubspotRowToItem(r, i)).filter(it => it.titulo && it.fecha);
+        } else {
+          // Formato plantilla: primera fila es header
+          formatLabel = 'Plantilla genérica';
+          const header = rows.shift().map(h => h.toLowerCase());
+          items = rows.map((r, i) => {
+            const obj = {};
+            header.forEach((h, j) => obj[h] = r[j] || '');
+            return templateRowToItem(obj, i);
+          }).filter(it => it.titulo);
+        }
+        if (!items.length) {
+          preview.innerHTML = `<div class="mt-4 p-4 rounded-2xl border border-[#fde2e2] bg-[#fef2f2] text-sm text-[#b91c1c]">
+            ⚠️ Detecté el formato <strong>${formatLabel}</strong> pero no pude extraer items con título y fecha válidos.<br>
+            <span class="text-xs">Revisá las primeras filas del CSV — el primer campo tiene que ser el nombre/título y el segundo una fecha (YYYY-MM-DD para HubSpot, DD/MM/YYYY o YYYY-MM-DD para plantilla).</span>
+          </div>`;
+          return;
+        }
+        const cls = classifyBulkItems(items);
+        preview.innerHTML = renderBulkPreview({ items, classification: cls, formatLabel, saveFn: 'bulkSaveCSV', source: 'csv' });
+      }
+      // Render preview compartido para CSV y Sheet
+      function renderBulkPreview({ items, classification, formatLabel, saveFn, source }) {
+        const cls = classification;
+        const bannerColor = cls.partialMatch.length ? '#fffbeb' : '#ecfdf5';
+        const bannerBorder = cls.partialMatch.length ? '#fde68a' : '#bbf7d0';
+        const bannerText = cls.partialMatch.length ? '#92400e' : '#166534';
+        return `<div class="mt-4">
+          <div class="p-3 rounded-xl mb-3" style="background:${bannerColor};border:1px solid ${bannerBorder}">
+            <p class="text-xs font-semibold" style="color:${bannerText}">${formatLabel ? `✅ Formato detectado: <strong>${formatLabel}</strong> · ` : ''}${items.length} item${items.length>1?'s':''} listos</p>
+            <p class="text-xs mt-1" style="color:${bannerText}">
+              🟢 <strong>${cls.new.length}</strong> nuevos ·
+              🔵 <strong>${cls.update.length}</strong> actualizan items existentes ·
+              ${cls.partialMatch.length ? `⚠️ <strong>${cls.partialMatch.length}</strong> match parcial (mismo título, fecha distinta)` : ''}
+            </p>
+          </div>
+          ${cls.partialMatch.length ? `<div class="p-3 rounded-xl mb-3" style="background:#fff7ed;border:1px solid #fed7aa">
+            <p class="text-xs text-[#9a3412]">
+              ⚠️ <strong>${cls.partialMatch.length} items con match parcial</strong>: el título coincide con uno existente pero la fecha es distinta.
+              Esto puede ser un rename o un duplicado real. Revisalos uno por uno — si lo querés actualizar, dejá el check; si querés crearlo como item nuevo, desmarcalo.
+            </p>
+          </div>` : ''}
+          <div class="max-h-72 overflow-y-auto scroll-v space-y-1 mb-4 border border-[var(--lightest-grey)] rounded-xl p-3">
+            ${renderBulkRows(cls.new, 'new', source)}
+            ${renderBulkRows(cls.update, 'update', source)}
+            ${renderBulkRows(cls.partialMatch, 'partial', source)}
+          </div>
+          <div class="p-3 rounded-xl mb-3" style="background:#f0f9ff;border:1px solid #bae6fd">
+            <p class="text-xs text-[#075985]">
+              🛟 <strong>Safety net</strong>: antes de aplicar este bulk, voy a guardar un snapshot completo del hub.
+              Si algo sale mal, podés revertir con el botón <strong>"Restaurar pre-bulk"</strong> que aparece después.
+            </p>
           </div>
           <div class="flex justify-end gap-2">
             <button class="btn btn-ghost" onclick="closeBulkModal()">Cancelar</button>
-            <button class="btn btn-primary" onclick='bulkSaveCSV(${JSON.stringify(JSON.stringify(items))})'>Sumar al hub</button>
+            <button class="btn btn-primary" onclick='${saveFn}(${JSON.stringify(JSON.stringify(items))})'>${ic('check','w-4 h-4')} Aplicar bulk al hub</button>
           </div>
         </div>`;
       }
+      function renderBulkRows(group, kind, source) {
+        if (!group.length) return '';
+        const icon = kind === 'new' ? '🟢' : kind === 'update' ? '🔵' : '⚠️';
+        const labelKind = kind === 'new' ? 'NUEVO' : kind === 'update' ? 'ACTUALIZA' : 'MATCH PARCIAL';
+        return group.map((g, i) => {
+          const it = g.incoming;
+          const existing = g.existing;
+          const dataId = `${source}-${kind}-${i}`;
+          const diffHint = existing ? `<details class="text-[10px] text-[var(--mid-grey)] ml-6 mt-1"><summary class="cursor-pointer">Ver cambios</summary>
+            <div class="mt-1 pl-2 border-l-2 border-[var(--lightest-grey)]">
+              <div><strong>Existente:</strong> ${escapeHtml(existing.titulo||'')} · ${existing.fecha||'sin fecha'} · status: ${existing.status||'—'} · copy: ${existing.copy ? '"'+escapeHtml(existing.copy.slice(0,40))+'…"' : 'vacío'}</div>
+              <div><strong>Entra:</strong>     ${escapeHtml(it.titulo||'')} · ${it.fecha||'sin fecha'} · status: ${it.status||'—'} · copy: ${it.copy ? '"'+escapeHtml(it.copy.slice(0,40))+'…"' : 'vacío'}</div>
+              <div class="mt-1 text-[#075985]">Tras merge: títulos/fechas/copy del entrante (si no vienen vacíos) + audiencia/canales/owners unidos sin duplicar.</div>
+            </div>
+          </details>` : '';
+          return `<label class="flex items-start gap-2 p-2 rounded-lg hover:bg-[var(--clear-blue-bg)] cursor-pointer">
+            <input type="checkbox" checked data-bulk-id="${dataId}" data-kind="${kind}" data-idx="${i}" class="mt-1" />
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-[10px] font-bold ${kind==='new'?'text-[#166534]':kind==='update'?'text-[#075985]':'text-[#9a3412]'}">${icon} ${labelKind}</span>
+                <span class="pill cat-${it.categoria}">${CATEGORIES[it.categoria]?.label||it.categoria}</span>
+                <span class="text-xs text-[var(--mid-grey)] font-mono">${it.fecha || 'sin fecha'}</span>
+                <span class="text-sm font-semibold flex-1 truncate" title="${escapeHtml(it.titulo)}">${escapeHtml(it.titulo)}</span>
+              </div>
+              ${diffHint}
+            </div>
+          </label>`;
+        }).join('');
+      }
       function bulkSaveCSV(jsonStr) {
         const items = JSON.parse(jsonStr);
-        state.items.push(...items);
+        applyBulkUpdate(items, 'csv');
+      }
+      // Aplica un bulk de items: respeta checkboxes individuales del preview, hace safe-merge
+      // de los que matchean, crea los nuevos, y deja un snapshot para revertir.
+      function applyBulkUpdate(items, source) {
+        const cls = classifyBulkItems(items);
+        // Lee los checkboxes del preview
+        const checks = document.querySelectorAll(`#bulk-preview input[type="checkbox"][data-bulk-id]`);
+        const checkedSet = new Set();
+        checks.forEach(c => { if (c.checked) checkedSet.add(c.dataset.bulkId); });
+        // Snapshot pre-bulk
+        const snapTs = saveBulkSnapshot();
+        let created = 0, updated = 0, skipped = 0;
+        const applyGroup = (group, kind) => {
+          group.forEach((g, i) => {
+            const dataId = `${source}-${kind}-${i}`;
+            if (!checkedSet.has(dataId)) { skipped++; return; }
+            if (kind === 'new') {
+              state.items.push(g.incoming);
+              api_saveItem(g.incoming);
+              created++;
+            } else {
+              const merged = safeMerge(g.existing, g.incoming);
+              const idx = state.items.findIndex(x => x.id === g.existing.id);
+              if (idx >= 0) state.items[idx] = merged;
+              api_saveItem(merged);
+              updated++;
+            }
+          });
+        };
+        applyGroup(cls.new, 'new');
+        applyGroup(cls.update, 'update');
+        applyGroup(cls.partialMatch, 'partial');
         closeBulkModal();
         renderAll();
-        toast(`✨ Sumé ${items.length} items vía CSV`);
+        // Toast + recovery button
+        const parts = [];
+        if (created) parts.push(`✨ ${created} nuevos`);
+        if (updated) parts.push(`🔄 ${updated} actualizados`);
+        if (skipped) parts.push(`⏭️ ${skipped} omitidos`);
+        toast(parts.join(' · ') || 'Nada que hacer');
+        // Mostrar banner de recovery
+        showPostBulkBanner(snapTs);
+      }
+      function showPostBulkBanner(snapTs) {
+        // Quita banner anterior si existe
+        const old = document.getElementById('post-bulk-banner');
+        if (old) old.remove();
+        const banner = document.createElement('div');
+        banner.id = 'post-bulk-banner';
+        banner.className = 'fixed bottom-4 right-4 z-50 max-w-sm bg-white rounded-xl shadow-lg border border-[#bae6fd] p-4';
+        banner.innerHTML = `
+          <div class="flex items-start gap-3">
+            <div class="text-2xl">🛟</div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-bold text-[#075985] mb-1">Snapshot pre-bulk guardado</div>
+              <div class="text-xs text-[var(--mid-grey)] mb-2">Tomado a las ${new Date(snapTs).toLocaleTimeString('es-AR')}. Si algo salió mal, podés revertir todo al estado previo.</div>
+              <div class="flex gap-2">
+                <button class="btn btn-secondary btn-xs" onclick="restorePreBulkSnapshot()">Restaurar pre-bulk</button>
+                <button class="btn btn-ghost btn-xs" onclick="document.getElementById('post-bulk-banner').remove()">Cerrar</button>
+              </div>
+            </div>
+          </div>`;
+        document.body.appendChild(banner);
+        // Auto-dismiss después de 5 min
+        setTimeout(() => { const el = document.getElementById('post-bulk-banner'); if (el) el.remove(); }, 5*60*1000);
       }
       function downloadCSVTemplate() {
         const csv = 'tipo,categoria,titulo,fecha,audiencia,canales,status,prioridad,owners,contenido\naccion,webinar,Webinar Pre Hot Sale,2026-06-03,Merchants,Online,programado,P1,Daniela Pereyra,Webinar para MM\ncomunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1,Daniela Pereyra,Invitación al webinar';

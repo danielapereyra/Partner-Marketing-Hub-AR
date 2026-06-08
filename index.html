@@ -959,7 +959,18 @@
             api('GET', '/api/config'),
           ]);
           if (Array.isArray(items) && items.length) {
+            // Detectar items con links legacy (strings) ANTES de normalizar
+            const itemsToHeal = items.filter(it => Array.isArray(it.links) && it.links.some(l => typeof l === 'string'));
             state.items = items.map(normalizeItemFromAPI);
+            // Self-heal silencioso: re-guarda los items que tenían links rotos con el formato correcto
+            if (itemsToHeal.length) {
+              console.log(`🛟 Auto-fix: ${itemsToHeal.length} items con links legacy. Re-guardando al backend en background…`);
+              const healedIds = new Set(itemsToHeal.map(x => x.id));
+              setTimeout(() => {
+                state.items.filter(x => healedIds.has(x.id)).forEach(x => { try { api_saveItem(x); } catch(e){} });
+                console.log(`✅ Auto-fix completo. Links normalizados a {url, label}.`);
+              }, 1500);
+            }
           }
           if (Array.isArray(benefits) && benefits.length) {
             state.benefits = benefits.map(normalizeBenefitFromAPI);
@@ -1002,6 +1013,21 @@
             try { it[f] = JSON.parse(it[f]); } catch(e) { it[f] = []; }
           }
         });
+        // Auto-fix: links legacy guardados como strings sueltos ['https://...'] → [{url, label}]
+        if (Array.isArray(it.links)) {
+          it.links = it.links.map(l => {
+            if (typeof l === 'string') {
+              const url = l.trim();
+              if (/^https?:\/\//i.test(url)) return { url, label: 'Link' };
+              return null;
+            }
+            if (l && typeof l === 'object') {
+              if (!l.url) return null;
+              return { url: l.url, label: l.label || 'Link' };
+            }
+            return null;
+          }).filter(Boolean);
+        }
         // Fecha de Postgres viene como 'YYYY-MM-DDTHH:MM:SS' o 'YYYY-MM-DD'
         if (it.fecha && typeof it.fecha === 'string') it.fecha = it.fecha.slice(0,10);
         if (it.fecha_fin && typeof it.fecha_fin === 'string') it.fecha_fin = it.fecha_fin.slice(0,10);
@@ -3152,33 +3178,45 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
         });
       }
       // Mapea una fila HubSpot a un item del hub
+      // El parser detecta cada columna POR CONTENIDO en vez de POR POSICIÓN — robusto a variaciones de export
       function hubspotRowToItem(row, idx) {
-        const [name, sentAt, subject, emailType, segment, url] = row.map(s => s || '');
-        // Fecha → YYYY-MM-DD (tomar la parte antes del espacio)
-        const fecha = (sentAt.split(' ')[0] || '').match(/^\d{4}-\d{2}-\d{2}$/) ? sentAt.split(' ')[0] : '';
+        const cells = row.map(s => (s || '').trim());
+        // Name: primera celda (siempre es el nombre de la campaña en HubSpot)
+        const name = cells[0] || `(sin nombre · fila ${idx+1})`;
+        // Fecha: primera celda que empiece con YYYY-MM-DD
+        const dateCell = cells.find(c => /^\d{4}-\d{2}-\d{2}/.test(c));
+        const fecha = dateCell ? dateCell.slice(0, 10) : '';
+        // URL: cualquier celda que empiece con http:// o https://
+        const urlCell = cells.find(c => /^https?:\/\//i.test(c));
+        // Email type: celda con palabras conocidas de HubSpot
+        const emailType = cells.find(c => /(invitation|reminder|newsletter|nurture|drip|campaign|promo|automation|regular email|marketing email)/i.test(c)) || '';
+        // Subject: la celda más larga que NO sea name/date/url/emailType
+        const candidates = cells.filter(c => c && c !== name && c !== dateCell && c !== urlCell && c !== emailType);
+        const subject = candidates.sort((a, b) => b.length - a.length)[0] || '';
+        // Segment: el resto (info auxiliar para detectar audiencia)
+        const segmentText = candidates.filter(c => c !== subject).join(' ');
         // Audiencia: detectar Agencies/Merchants/Partners en el nombre o segmento
         const audiencia = [];
-        const allText = `${name} ${segment}`.toLowerCase();
+        const allText = `${name} ${segmentText}`.toLowerCase();
         if (/agenc/.test(allText)) audiencia.push('Agencies');
         if (/merchant/.test(allText)) audiencia.push('Merchants');
         if (/partner/.test(allText) && !audiencia.length) audiencia.push('Partners');
         if (!audiencia.length) audiencia.push('Partners');
-        // Categoría: si en emailType hay "event" → email igual (es comunicación), pero hay que mantener email
         const categoria = 'email';
-        const links = url ? [url] : [];
+        const links = urlCell ? [{ url: urlCell, label: 'HubSpot · preview' }] : [];
         return {
           id: 'hs-' + slug() + '-' + idx,
           tipo: 'comunicacion',
           categoria,
-          titulo: name || `(sin nombre · fila ${idx+1})`,
+          titulo: name,
           fecha: fecha || null,
           audiencia,
           canales: ['Email'],
-          status: 'finalizado', // ya enviado (vino de HubSpot histórico)
+          status: 'finalizado',
           prioridad: '',
           owners: [],
-          contenido: subject || '',
-          copy: subject || '',
+          contenido: subject,
+          copy: subject,
           links,
           comentarios: emailType ? `HubSpot · ${emailType}` : 'Importado desde HubSpot CSV',
           _source_section: 'hubspot_csv',

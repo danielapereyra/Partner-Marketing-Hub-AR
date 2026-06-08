@@ -5625,6 +5625,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
           tipo_beneficio: fd.get('tipo_beneficio'),
           agencia: fd.get('agencia'),
           fecha_objetivo: fd.get('fecha_objetivo') || null,
+          fecha_publicado: fd.get('fecha_publicado') || null,
           etapa: fd.get('etapa') || 'idea',
           prioridad: fd.get('prioridad') || '',
           formato: fd.get('formato') || '',
@@ -5640,22 +5641,53 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
           notas: fd.get('notas') || '',
           custom_fields: readCustomFieldsFromForm(),
         };
+        // Warning si no tiene fecha: la iniciativa no aparecerá en el calendario
+        if (!data.fecha_objetivo && !data.fecha_publicado) {
+          if (!confirm(`⚠️ Esta iniciativa NO tiene fecha (ni objetivo ni publicado).\n\nSin fecha, no va a aparecer en el calendario.\n\n¿Querés guardarla igual? (Después podés volver a editarla y agregar una fecha)`)) {
+            return;
+          }
+        }
         if (editId) {
           const b = state.benefits.find(x => x.id === editId);
           if (b) Object.assign(b, data);
-          closeAllDrawers(); renderAll();
+          closeAllDrawers();
           if (b) api_saveBenefit(b);
           openBenefitDetail(editId);
+          renderAll();
           toast(`✏️ Slot actualizado · ${data.agencia}`);
         } else {
           data.id = 'ben-' + slug();
           state.benefits.push(data);
-          closeAllDrawers(); renderAll();
+          closeAllDrawers();
           api_saveBenefit(data);
-          toast(`✅ Nuevo slot · ${data.agencia}`);
+          renderAll();
+          toast(`✅ Nuevo slot · ${data.agencia}${data.fecha_objetivo?' · aparecerá en calendario el '+fmtDate(data.fecha_objetivo):' · ⚠️ sin fecha, NO aparecerá en calendario'}`);
           setTimeout(() => openBenefitDetail(data.id), 300);
         }
+        console.log('[benefit-save] guardado:', data.id, 'fecha_objetivo:', data.fecha_objetivo, 'fecha_publicado:', data.fecha_publicado);
       }
+      // Diagnóstico: corré window.debugCalendarBenefits() en la consola para ver qué iniciativas aparecen/no aparecen en el calendario y por qué
+      window.debugCalendarBenefits = function() {
+        console.log('═══ DIAGNÓSTICO INICIATIVAS → CALENDARIO ═══');
+        console.log(`state.benefits tiene ${state.benefits.length} iniciativas en total:\n`);
+        const summary = { conFecha: 0, sinFecha: 0, tipoOk: 0, tipoUnknown: 0 };
+        state.benefits.forEach(b => {
+          const hasDate = !!(b.fecha_publicado || b.fecha_objetivo);
+          const dateUsed = b.fecha_publicado || b.fecha_objetivo || '∅ SIN FECHA';
+          const typeOk = !!BENEFIT_TYPES[b.tipo_beneficio];
+          const willRender = hasDate ? '✅ APARECE' : '❌ NO APARECE (sin fecha)';
+          summary[hasDate?'conFecha':'sinFecha']++;
+          summary[typeOk?'tipoOk':'tipoUnknown']++;
+          console.log(`  ${willRender} · ${b.id} · tipo=${b.tipo_beneficio}${typeOk?'':' ⚠️ tipo desconocido'} · fecha=${dateUsed} · agencia=${b.agencia||'?'} · etapa=${b.etapa||'?'}`);
+        });
+        console.log('\nResumen:', summary);
+        console.log('\nVirtuales generados ahora:');
+        const virtuals = getAllCalendarItems().filter(it => it._benefit_id);
+        virtuals.forEach(v => console.log(`  · ${v.fecha} · ${v.titulo}`));
+        console.log(`Total virtuales: ${virtuals.length} de ${state.benefits.length} iniciativas\n`);
+        console.log('═══════════════════════════════════════════');
+        return { benefits: state.benefits.length, conFecha: summary.conFecha, virtuales: virtuals.length };
+      };
 
       // ============== ROUTING ==============
       function setView(v) {

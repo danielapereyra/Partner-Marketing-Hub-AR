@@ -697,7 +697,7 @@
 
       const AUDIENCES = ['Agencies', 'Merchants', 'Leads'];
       // Tipos de iniciativa (cross-cutting tag) — se usan tanto en iniciativas como en acciones del calendario
-      const INITIATIVE_TYPE_TAGS = ['DEMAND GEN', 'EDUCATION', 'ENGAGEMENT', 'ADOPTION', 'OTHER'];
+      const INITIATIVE_TYPE_TAGS = ['DEMAND GEN', 'EDUCATION', 'ENGAGEMENT', 'ADOPTION', 'POSITIONING', 'OTHER'];
 
       // ============== INICIATIVAS CON AGENCIAS ==============
       // Tipos de iniciativa · editables desde admin via openInitiativeTypesEditor()
@@ -2969,7 +2969,7 @@
           </div>`).join('');
 
         const maxTipo = Math.max(1, ...Object.values(tipoInitiativaCounts));
-        const tipoColors = { 'DEMAND GEN':'#0050c3','EDUCATION':'#16a34a','ENGAGEMENT':'#be185d','ADOPTION':'#9333ea','OTHER':'#64748b' };
+        const tipoColors = { 'DEMAND GEN':'#0050c3','EDUCATION':'#16a34a','ENGAGEMENT':'#be185d','ADOPTION':'#9333ea','POSITIONING':'#ea580c','OTHER':'#64748b' };
         const tipoRows = Object.entries(tipoInitiativaCounts)
           .filter(([_,v]) => v > 0)
           .sort((a,b) => b[1]-a[1])
@@ -3043,7 +3043,7 @@
                 <h3 class="text-lg font-bold h-heading flex items-center gap-2">${ic('tag','w-5 h-5')} Por tipo de iniciativa</h3>
                 <span class="text-xs text-[var(--mid-grey)]">${scopeLabel}</span>
               </div>
-              <p class="text-xs text-[var(--mid-grey)] mb-4">Distribución entre DEMAND GEN, EDUCATION, ENGAGEMENT, ADOPTION (tag transversal opcional).</p>
+              <p class="text-xs text-[var(--mid-grey)] mb-4">Distribución entre DEMAND GEN, EDUCATION, ENGAGEMENT, ADOPTION, POSITIONING.</p>
               ${tipoRows || `<p class="text-sm text-[var(--mid-grey)]">Aún no se taguearon iniciativas en este periodo.</p>`}
             </div>
           </div>

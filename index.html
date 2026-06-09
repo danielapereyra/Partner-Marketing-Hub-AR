@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Partner Marketing Hub · Tiendanube ARG</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230050c3'/%3E%3Ctext x='50' y='66' font-family='-apple-system,BlinkMacSystemFont,sans-serif' font-size='44' font-weight='800' text-anchor='middle' fill='%23fff'%3EH%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -681,6 +682,8 @@
         ugc:            { label: 'UGC partner',      tipo: 'accion',       icon: 'film' },
         social_media:   { label: 'Social media',     tipo: 'accion',       icon: 'instagram' },
         sponsorship:    { label: 'Sponsorship',      tipo: 'accion',       icon: 'megaphone' },
+        eventos:        { label: 'Eventos',          tipo: 'accion',       icon: 'calendar-check' },
+        enablement:     { label: 'Enablement',       tipo: 'accion',       icon: 'graduation-cap' },
         // Comunicaciones
         email:          { label: 'Email',            tipo: 'comunicacion', icon: 'mail' },
         whatsapp:       { label: 'WhatsApp',         tipo: 'comunicacion', icon: 'message-circle' },
@@ -692,7 +695,9 @@
         other:          { label: 'Otra',             tipo: 'accion',       icon: 'circle' },
       };
 
-      const AUDIENCES = ['Agencies', 'Merchants', 'Partners', 'Leads'];
+      const AUDIENCES = ['Agencies', 'Merchants', 'Leads'];
+      // Tipos de iniciativa (cross-cutting tag) — se usan tanto en iniciativas como en acciones del calendario
+      const INITIATIVE_TYPE_TAGS = ['DEMAND GEN', 'EDUCATION', 'ENGAGEMENT', 'ADOPTION', 'OTHER'];
 
       // ============== INICIATIVAS CON AGENCIAS ==============
       // Tipos de iniciativa · editables desde admin via openInitiativeTypesEditor()
@@ -1029,6 +1034,10 @@
           setTimeout(() => runHistoricalMigrationV2(), 2000);
           // Cleanup de duplicados (mayo y anteriores) · idempotente
           setTimeout(() => runDeduplicationMigration(), 5000);
+          // Partners → Agencies (idempotente)
+          setTimeout(() => runPartnersToAgenciesMigration(), 7000);
+          // Cleanup de links rotos / duplicados (idempotente)
+          setTimeout(() => runLinkAudit(), 10000);
         } catch(e) {
           console.error('Error cargando del backend:', e);
           setSyncStatus('error', 'No conecta al servidor · usando datos locales');
@@ -1088,6 +1097,101 @@
         if (created || updated) {
           renderAll();
           toast(`📅 Sincronicé histórico ene-may · ${created} nuevos, ${updated} actualizados`);
+        }
+      }
+
+      // Link audit · limpia links rotos/duplicados de todos los items
+      // Criterio "link malo": vacío, '#', no empieza con http(s)://, o es la URL del propio hub
+      // - Si un item tiene 2+ links y al menos 1 funciona: borra los malos
+      // - Si un item tiene 1 link y ese es malo: lo deja (mejor con un link malo que con ninguno),
+      //   pero reporta a consola para que Daniela lo ajuste manualmente
+      // - Si hay duplicados (misma URL repetida), deja uno solo
+      async function runLinkAudit() {
+        const FLAG_KEY = 'pmh_link_audit_v1_done';
+        if (localStorage.getItem(FLAG_KEY) === 'done') return;
+        const HUB_HOSTNAMES = ['partner-marketing-hub-arg.vercel.app', window.location.hostname];
+        const isBadLink = (l) => {
+          if (!l || !l.url || typeof l.url !== 'string') return true;
+          const u = l.url.trim();
+          if (!u || u === '#' || u === 'about:blank' || u === 'javascript:void(0)') return true;
+          if (!/^https?:\/\//i.test(u)) return true;
+          // El propio hub (link circular)
+          for (const h of HUB_HOSTNAMES) {
+            if (h && u.includes('//'+h)) return true;
+          }
+          return false;
+        };
+        let cleaned = 0, removed = 0, dedupd = 0;
+        const reportSingleBad = [];
+        for (const it of state.items) {
+          if (!Array.isArray(it.links) || !it.links.length) continue;
+          // Dedup primero (por URL)
+          const seen = new Set();
+          const noDups = [];
+          for (const l of it.links) {
+            const u = l && l.url ? l.url.trim() : '';
+            if (u && seen.has(u)) { dedupd++; continue; }
+            if (u) seen.add(u);
+            noDups.push(l);
+          }
+          const goodLinks = noDups.filter(l => !isBadLink(l));
+          const badLinks = noDups.filter(l => isBadLink(l));
+          if (badLinks.length === 0 && noDups.length === it.links.length) continue; // sin cambios
+          if (badLinks.length && goodLinks.length) {
+            // Hay buenos y malos: borra solo los malos
+            it.links = goodLinks;
+            removed += badLinks.length;
+            cleaned++;
+          } else if (badLinks.length === noDups.length && noDups.length === 1) {
+            // Solo 1 link y es malo: dejarlo, reportar
+            reportSingleBad.push({ id: it.id, fecha: it.fecha, titulo: it.titulo, badUrl: badLinks[0]?.url });
+          } else if (badLinks.length === noDups.length) {
+            // Todos malos pero hay más de 1: dejar uno solo (no romper completamente)
+            it.links = [badLinks[0]];
+            removed += badLinks.length - 1;
+            reportSingleBad.push({ id: it.id, fecha: it.fecha, titulo: it.titulo, badUrl: badLinks[0]?.url });
+            cleaned++;
+          } else {
+            // dedupe only
+            it.links = noDups;
+            cleaned++;
+          }
+          if (typeof api_saveItem === 'function') api_saveItem(it);
+        }
+        localStorage.setItem(FLAG_KEY, 'done');
+        console.log(`🔗 Link audit: ${cleaned} items limpiados · ${removed} links rotos eliminados · ${dedupd} duplicados removidos`);
+        if (reportSingleBad.length) {
+          console.warn(`⚠️ Link audit · ${reportSingleBad.length} items tienen UN SOLO link y está roto · ajustá manualmente:`);
+          console.table(reportSingleBad);
+          // Guardar en window para que Daniela pueda revisarlo
+          window._badLinksReport = reportSingleBad;
+          toast(`⚠️ ${reportSingleBad.length} items con link único roto · corré window._badLinksReport en consola`);
+        }
+        if (cleaned || removed || dedupd) {
+          renderAll();
+        }
+      }
+
+      // Migración retroactiva: 'Partners' en audiencia → 'Agencies' (eran lo mismo, conceptualmente duplicado)
+      async function runPartnersToAgenciesMigration() {
+        const FLAG_KEY = 'pmh_partners_to_agencies_done';
+        if (localStorage.getItem(FLAG_KEY) === 'done') return;
+        let updated = 0;
+        for (const it of state.items) {
+          if (!Array.isArray(it.audiencia)) continue;
+          const hasPartners = it.audiencia.includes('Partners');
+          if (!hasPartners) continue;
+          // Reemplazar 'Partners' por 'Agencies', deduplicar
+          const newAud = [...new Set(it.audiencia.map(a => a === 'Partners' ? 'Agencies' : a))];
+          it.audiencia = newAud;
+          if (typeof api_saveItem === 'function') api_saveItem(it);
+          updated++;
+        }
+        localStorage.setItem(FLAG_KEY, 'done');
+        if (updated) {
+          console.log(`🔄 Partners → Agencies: ${updated} items actualizados`);
+          renderAll();
+          toast(`🔄 Convertí ${updated} item${updated===1?'':'s'} de "Partners" a "Agencies"`);
         }
       }
 
@@ -1392,10 +1496,13 @@
       function updateDateLabel() {
         const el = document.getElementById('date-label');
         if (!el) return;
-        const q = Math.floor(today.getMonth() / 3) + 1;
-        const month = today.toLocaleDateString('es-AR',{month:'long',year:'numeric'});
+        const now = new Date(); // siempre usar la fecha actual (no la variable today que es del init)
+        const q = Math.floor(now.getMonth() / 3) + 1;
+        const month = now.toLocaleDateString('es-AR',{month:'long',year:'numeric'});
         el.textContent = `Q${q} · ${month}`;
       }
+      // Refresh el label cada hora por si la pestaña queda abierta cruzando un cambio de mes/Q
+      setInterval(updateDateLabel, 60 * 60 * 1000);
       function applyRole() {
         updateDateLabel();
         const admin = isAdmin();
@@ -2681,44 +2788,63 @@
 
       // ============== INSIGHTS VIEW ==============
       function renderInsights() {
-        const items = state.items;
-        const byCat = {};
-        items.forEach(it => { byCat[it.categoria] = (byCat[it.categoria]||0)+1; });
-        const byAud = {};
-        items.forEach(it => (it.audiencia||[]).forEach(a => byAud[a] = (byAud[a]||0)+1));
-        const maxCat = Math.max(...Object.values(byCat));
-        const catRows = Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([k,v]) => {
-          const cat = CATEGORIES[k] || { label: k };
-          return `<div class="mb-3">
-            <div class="flex items-center justify-between mb-1 text-xs">
-              <div class="flex items-center gap-2"><span class="pill cat-${k}">${cat.label}</span></div>
-              <div class="font-bold h-heading">${v}</div>
-            </div>
-            <div class="bar"><div class="bar-fill" style="width:${(v/maxCat)*100}%; background: var(--nimbus-blue);"></div></div>
-          </div>`;
-        }).join('');
-        const maxAud = Math.max(...Object.values(byAud));
-        const audRows = Object.entries(byAud).map(([k,v]) => {
-          return `<div class="mb-2">
-            <div class="flex items-center justify-between text-xs mb-1"><span class="font-semibold">${k}</span><span class="text-[var(--mid-grey)]">${v}</span></div>
-            <div class="bar"><div class="bar-fill" style="width:${(v/maxAud)*100}%; background: var(--apps);"></div></div>
-          </div>`;
-        }).join('');
+        const scope = state._insightsScope || 'this-q'; // this-month, this-q, q1, q2, q3, q4, year
+        const allItems = [...state.items, ...((state.benefits||[]).map(b => {
+          try { return benefitToVirtualItem(b); } catch(e) { return null; }
+        }).filter(Boolean))];
 
-        // conflict detection
-        const conflicts = [];
-        const weeksMap = {};
-        items.filter(it => it.tipo==='comunicacion' && it.fecha && new Date(it.fecha+'T12:00:00') >= today).forEach(it => {
-          const d = new Date(it.fecha+'T12:00:00');
-          const wk = Math.floor(d.getTime() / (7*24*3600*1000));
-          (it.audiencia||[]).forEach(a => { (weeksMap[wk+'|'+a] ||= []).push(it); });
+        // Filter by scope
+        const year = today.getFullYear();
+        const m = today.getMonth();
+        let from, to, scopeLabel;
+        if (scope === 'this-month') {
+          from = `${year}-${String(m+1).padStart(2,'0')}-01`;
+          to = `${year}-${String(m+1).padStart(2,'0')}-31`;
+          scopeLabel = today.toLocaleDateString('es-AR',{month:'long',year:'numeric'});
+        } else if (scope === 'this-q' || /^q[1-4]$/.test(scope)) {
+          const q = scope === 'this-q' ? Math.floor(m/3) : (parseInt(scope.slice(1)) - 1);
+          const qStart = q*3;
+          from = `${year}-${String(qStart+1).padStart(2,'0')}-01`;
+          to = `${year}-${String(qStart+3).padStart(2,'0')}-31`;
+          scopeLabel = `Q${q+1} ${year}`;
+        } else { // year
+          from = `${year}-01-01`; to = `${year}-12-31`; scopeLabel = `${year}`;
+        }
+        const inScope = allItems.filter(it => it.fecha && it.fecha >= from && it.fecha <= to);
+
+        // Breakdowns
+        const accion = inScope.filter(it => it.tipo === 'accion' && !it._benefit_id);
+        const comunicacion = inScope.filter(it => it.tipo === 'comunicacion');
+        const iniciativas = inScope.filter(it => it._benefit_id);
+
+        // Por tipo de iniciativa (DEMAND GEN, EDUCATION, etc.)
+        const tipoInitiativaCounts = {};
+        INITIATIVE_TYPE_TAGS.forEach(t => tipoInitiativaCounts[t] = 0);
+        tipoInitiativaCounts['(sin tag)'] = 0;
+        inScope.forEach(it => {
+          const t = (it.tipo_iniciativa || '').toString().trim();
+          if (t && INITIATIVE_TYPE_TAGS.includes(t)) tipoInitiativaCounts[t]++;
+          else tipoInitiativaCounts['(sin tag)']++;
         });
-        Object.entries(weeksMap).forEach(([k, list]) => { if (list.length >= 2) conflicts.push({ audiencia: k.split('|')[1], items: list }); });
 
-        const finalizados = items.filter(it => ['finalizado','enviado'].includes(it.status)).length;
-        const proximos = items.filter(it => it.fecha && new Date(it.fecha+'T12:00:00') >= today && new Date(it.fecha+'T12:00:00') <= new Date(today.getTime()+30*24*3600*1000)).length;
-        const backlog = items.filter(it => statusOf(it)==='pendiente').length;
-        const sinFecha = items.filter(it => !it.fecha).length;
+        // Por categoría
+        const catCounts = {};
+        inScope.forEach(it => { catCounts[it.categoria] = (catCounts[it.categoria]||0)+1; });
+
+        // Capacidad del mes/scope: cuántos eventos, webinars, comms
+        const capacidad = {
+          'Webinars': inScope.filter(it => it.categoria === 'webinar').length,
+          'Pocket events': inScope.filter(it => it.categoria === 'pocket_event').length,
+          'Big events / Eventos': inScope.filter(it => it.categoria === 'big_event' || it.categoria === 'eventos').length,
+          'Key Cities': inScope.filter(it => it.categoria === 'key_city').length,
+          'UGC / Content': inScope.filter(it => it.categoria === 'ugc' || it.categoria === 'social_media').length,
+          'Enablement': inScope.filter(it => it.categoria === 'enablement').length,
+          'Business Cases': inScope.filter(it => it.categoria === 'business_case').length,
+          'Sponsorships': inScope.filter(it => it.categoria === 'sponsorship' || it.categoria === 'sponsoreo').length,
+          'Emails': inScope.filter(it => it.categoria === 'email').length,
+          'WhatsApp / Comunidad': inScope.filter(it => it.categoria === 'whatsapp' || it.categoria === 'comunidad').length,
+          'Newsletters': inScope.filter(it => it.categoria === 'newsletter').length,
+        };
 
         function kpiCard(icon, label, value, color, sub) {
           return `<div class="bg-white rounded-2xl card-shadow p-5">
@@ -2730,6 +2856,33 @@
             <div class="text-xs text-[var(--mid-grey)] mt-1">${sub}</div>
           </div>`;
         }
+
+        const scopeOptions = [
+          ['this-month','Este mes'],
+          ['this-q','Este Q'],
+          ['q1','Q1'],['q2','Q2'],['q3','Q3'],['q4','Q4'],
+          ['year', `${year}`],
+        ];
+
+        // Max para barras
+        const maxCap = Math.max(1, ...Object.values(capacidad));
+        const capRows = Object.entries(capacidad)
+          .filter(([_,v]) => v > 0)
+          .sort((a,b) => b[1]-a[1])
+          .map(([k,v]) => `<div class="mb-2">
+            <div class="flex items-center justify-between text-xs mb-1"><span class="font-semibold">${k}</span><span class="font-bold h-heading">${v}</span></div>
+            <div class="bar"><div class="bar-fill" style="width:${(v/maxCap)*100}%; background: var(--nimbus-blue);"></div></div>
+          </div>`).join('');
+
+        const maxTipo = Math.max(1, ...Object.values(tipoInitiativaCounts));
+        const tipoColors = { 'DEMAND GEN':'#0050c3','EDUCATION':'#16a34a','ENGAGEMENT':'#be185d','ADOPTION':'#9333ea','OTHER':'#64748b','(sin tag)':'#9ca3af' };
+        const tipoRows = Object.entries(tipoInitiativaCounts)
+          .filter(([_,v]) => v > 0)
+          .sort((a,b) => b[1]-a[1])
+          .map(([k,v]) => `<div class="mb-2">
+            <div class="flex items-center justify-between text-xs mb-1"><span class="font-semibold">${k}</span><span class="font-bold h-heading">${v}</span></div>
+            <div class="bar"><div class="bar-fill" style="width:${(v/maxTipo)*100}%; background:${tipoColors[k]||'#0050c3'};"></div></div>
+          </div>`).join('');
 
         const dashboardCard = `
           <div class="bg-white rounded-2xl border border-[#e4e4e7] p-5 mb-6 flex items-center gap-4 flex-wrap">
@@ -2747,53 +2900,66 @@
 
         return `
           ${dashboardCard}
+
+          <!-- Scope selector -->
+          <div class="bg-white rounded-2xl border border-[#e4e4e7] p-4 mb-5 flex items-center gap-2 flex-wrap">
+            <span class="text-xs font-bold uppercase tracking-wider text-[var(--mid-grey)] mr-2">Periodo:</span>
+            ${scopeOptions.map(([k,l]) => `<button class="btn ${scope===k?'btn-primary':'btn-secondary'} btn-xs" onclick="state._insightsScope='${k}'; renderAll();">${l}</button>`).join('')}
+            <span class="text-xs text-[var(--mid-grey)] ml-auto">Mostrando: <strong>${scopeLabel}</strong> · ${inScope.length} items</span>
+          </div>
+
+          <!-- KPIs principales -->
           <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            ${kpiCard('check-circle-2','Ejecutados',  finalizados, '#16a34a', `${Math.round(finalizados/items.length*100)}% del total`)}
-            ${kpiCard('calendar-clock','Próximos 30d', proximos,   '#0050c3', 'Agendados')}
-            ${kpiCard('inbox','Pendientes',           backlog,     '#ef4444', 'Por avanzar')}
-            ${kpiCard('alert-circle','Sin fecha',     sinFecha,    '#f97316', 'TBD del sheet')}
+            ${kpiCard('handshake', 'Iniciativas con agencias', iniciativas.length, '#be185d', `Ejecutadas/agendadas en ${scopeLabel}`)}
+            ${kpiCard('flame', 'Acciones', accion.length, '#0050c3', 'Webinars, eventos, UGC, etc.')}
+            ${kpiCard('mail', 'Comunicaciones', comunicacion.length, '#16a34a', 'Emails + WhatsApp + Newsletter')}
+            ${kpiCard('layers', 'Total del periodo', inScope.length, '#9333ea', 'Suma de todo lo agendado')}
           </div>
 
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-            <div class="lg:col-span-2 bg-white rounded-2xl card-shadow p-6">
-              <div class="flex items-center justify-between mb-4">
-                <h3 class="text-lg font-bold h-heading">Distribución por categoría</h3>
-                <span class="text-xs text-[var(--mid-grey)]">Total ${items.length} ítems</span>
-              </div>
-              ${catRows}
-            </div>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+            <!-- Capacidad: qué hicimos en este scope -->
             <div class="bg-white rounded-2xl card-shadow p-6">
-              <h3 class="text-lg font-bold h-heading mb-4">Cobertura por audiencia</h3>
-              ${audRows}
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold h-heading flex items-center gap-2">${ic('layers','w-5 h-5')} Capacidad ejecutada</h3>
+                <span class="text-xs text-[var(--mid-grey)]">${scopeLabel}</span>
+              </div>
+              <p class="text-xs text-[var(--mid-grey)] mb-4">Cuánto produjo el equipo en este periodo por tipo de output.</p>
+              ${capRows || `<p class="text-sm text-[var(--mid-grey)]">Sin items en este periodo.</p>`}
+            </div>
+
+            <!-- Por tipo de iniciativa -->
+            <div class="bg-white rounded-2xl card-shadow p-6">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold h-heading flex items-center gap-2">${ic('tag','w-5 h-5')} Por tipo de iniciativa</h3>
+                <span class="text-xs text-[var(--mid-grey)]">${scopeLabel}</span>
+              </div>
+              <p class="text-xs text-[var(--mid-grey)] mb-4">Distribución entre DEMAND GEN, EDUCATION, ENGAGEMENT, ADOPTION (tag transversal opcional).</p>
+              ${tipoRows || `<p class="text-sm text-[var(--mid-grey)]">Aún no se taguearon iniciativas en este periodo.</p>`}
             </div>
           </div>
 
+          <!-- Comparativa Q por Q (siempre del año actual) -->
           <div class="bg-white rounded-2xl card-shadow p-6 mb-6">
-            <div class="flex items-center gap-3 mb-4">
-              <div class="w-9 h-9 rounded-full ai-glow flex items-center justify-center">${ic('sparkles','w-4 h-4 text-white')}</div>
-              <div>
-                <h3 class="text-lg font-bold h-heading">Resumen ejecutivo · semana del ${fmtDate(today)}</h3>
-                <p class="text-xs text-[var(--mid-grey)]">Generado por Asistente AI</p>
-              </div>
-            </div>
-            <div class="text-sm leading-relaxed text-[var(--text-dark)]">
-              <p>Esta semana tenemos <strong>${items.filter(it => it.fecha && new Date(it.fecha+'T12:00:00') >= today && new Date(it.fecha+'T12:00:00') <= new Date(today.getTime()+7*24*3600*1000)).length} ítems</strong> en agenda. Foco: cerrar lo pendiente del Workshop Córdoba y avanzar el lanzamiento de Marketing Nube AI Studio.</p>
-              <p class="mt-3"><strong>Junio</strong>: el calendario tiene buena cobertura para Agencies (4 acciones P1) pero queda escaso para SMB Merchants — considerar sumar 1-2 comms más antes del 10/6.</p>
-            </div>
-          </div>
-
-          <div class="bg-white rounded-2xl card-shadow p-6">
             <div class="flex items-center justify-between mb-4">
-              <h3 class="text-lg font-bold h-heading flex items-center gap-2">${ic('alert-triangle','w-5 h-5 text-[#92400e]')} Conflictos y slots libres</h3>
-              <span class="text-xs text-[var(--mid-grey)]">Detección automática</span>
+              <h3 class="text-lg font-bold h-heading flex items-center gap-2">${ic('bar-chart','w-5 h-5')} Comparativa por Q · ${year}</h3>
+              <span class="text-xs text-[var(--mid-grey)]">Iniciativas con agencias</span>
             </div>
-            ${conflicts.length ? conflicts.map(c => `
-              <div class="border border-[#fde2e2] bg-[#fef2f2] rounded-xl p-4 mb-3">
-                <div class="flex items-center gap-2 mb-2"><span class="pill" style="background:#fde2e2;color:#b91c1c">⚠ Solape</span><span class="text-sm font-semibold">Audiencia: ${c.audiencia}</span></div>
-                <p class="text-sm text-[var(--text-dark)] mb-2">Detecté ${c.items.length} comunicaciones en la misma semana hacia <strong>${c.audiencia}</strong>.</p>
-                <ul class="text-xs text-[var(--mid-grey)] space-y-1">${c.items.map(i => `<li>• ${fmtDate(i.fecha)} — ${escapeHtml(i.titulo)}</li>`).join('')}</ul>
-              </div>
-            `).join('') : `<p class="text-sm text-[var(--mid-grey)]">Sin conflictos detectados en las próximas semanas. ✨</p>`}
+            <div class="grid grid-cols-4 gap-3">
+              ${[0,1,2,3].map(qIdx => {
+                const qFrom = `${year}-${String(qIdx*3+1).padStart(2,'0')}-01`;
+                const qTo = `${year}-${String(qIdx*3+3).padStart(2,'0')}-31`;
+                const qIni = (state.benefits||[]).filter(b => {
+                  const d = b.fecha_publicado || b.fecha_objetivo;
+                  return d && d >= qFrom && d <= qTo;
+                }).length;
+                const isCurrentQ = qIdx === Math.floor(m/3);
+                return `<div class="rounded-xl p-3 ${isCurrentQ?'bg-[var(--clear-blue-bg)] border border-[var(--nimbus-blue)]':'bg-[#fafafa] border border-[#e4e4e7]'}">
+                  <div class="text-[10px] uppercase tracking-wider text-[var(--mid-grey)] font-semibold">Q${qIdx+1} ${year}${isCurrentQ?' · actual':''}</div>
+                  <div class="text-2xl font-extrabold h-heading">${qIni}</div>
+                  <div class="text-[10px] text-[var(--mid-grey)]">iniciativas</div>
+                </div>`;
+              }).join('')}
+            </div>
           </div>
         `;
       }
@@ -4698,8 +4864,44 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
       }
 
       // ============== DAY LIST DRAWER ==============
+      // ============== HELPERS: ANEXOS / LINKS MULTI ==============
+      function itemLinkRowHTML(label, url) {
+        const lbl = escapeHtml(label || '');
+        const u = escapeHtml(url || '');
+        return `<div class="flex items-center gap-2" data-link-row>
+          <input type="text" placeholder="Etiqueta (ej: HubSpot · Brief · Métricas)" class="input text-xs flex-shrink-0" style="width:170px" data-link-label value="${lbl}" />
+          <input type="text" placeholder="https://…" class="input text-xs flex-1" data-link-url value="${u}" />
+          <button type="button" class="btn btn-ghost btn-xs" onclick="this.closest('[data-link-row]').remove()" title="Eliminar este link">${ic('x','w-3 h-3')}</button>
+        </div>`;
+      }
+      function addItemLinkRow() {
+        const list = document.getElementById('item-links-list');
+        if (!list) return;
+        const div = document.createElement('div');
+        div.innerHTML = itemLinkRowHTML('', '');
+        list.appendChild(div.firstChild);
+        if (window.lucide) lucide.createIcons();
+      }
+      function readItemLinksFromForm() {
+        const list = document.getElementById('item-links-list');
+        if (!list) return [];
+        const links = [];
+        list.querySelectorAll('[data-link-row]').forEach(row => {
+          const label = row.querySelector('[data-link-label]').value.trim();
+          const url = row.querySelector('[data-link-url]').value.trim();
+          if (url) links.push({ label: label || 'Link', url });
+        });
+        return links;
+      }
+      window.addItemLinkRow = addItemLinkRow;
+
       function openDayList(dateStr) {
-        const items = state.items.filter(it => it.fecha === dateStr).sort((a,b)=>{
+        // Incluir tanto state.items como los virtuales de iniciativas con la misma fecha
+        const allItems = getAllCalendarItems().filter(it => it.fecha === dateStr);
+        const items = allItems.sort((a,b)=>{
+          // Iniciativas primero (más informativas), después por status
+          if (a._benefit_id && !b._benefit_id) return -1;
+          if (!a._benefit_id && b._benefit_id) return 1;
           const order = { pendiente:0, programado:1, on_hold:2, finalizado:3 };
           return (order[statusOf(a)]||9) - (order[statusOf(b)]||9);
         });
@@ -4716,8 +4918,11 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
           <div class="px-6 py-5 overflow-y-auto scroll-v flex-1">
             ${items.length ? items.map(it => {
               const cat = CATEGORIES[it.categoria] || {label:'Otra',icon:'circle'}; const st = statusOf(it);
-              return `<div class="p-4 rounded-2xl border border-[var(--lightest-grey)] mb-3 hover:border-[var(--nimbus-blue)] cursor-pointer" onclick="openDetail('${it.id}')">
-                <div class="flex items-center gap-2 mb-2 flex-wrap"><span class="pill cat-${it.categoria}">${ic(cat.icon,'w-3 h-3')} ${cat.label}</span><span class="pill status-${st}"><span class="st-dot ${st}" style="width:6px;height:6px;border:none;box-shadow:none"></span> ${STATUSES[st].label}</span>${it.prioridad?`<span class="pill priority-${it.prioridad}">${it.prioridad}</span>`:''}</div>
+              const isBenefit = !!it._benefit_id;
+              const clickHandler = isBenefit ? `openBenefitDetail('${it._benefit_id}')` : `openDetail('${it.id}')`;
+              const benefitTag = isBenefit ? `<span class="pill" style="background:#fef3c7;color:#92400e">🎁 Iniciativa</span>` : '';
+              return `<div class="p-4 rounded-2xl border border-[var(--lightest-grey)] mb-3 hover:border-[var(--nimbus-blue)] cursor-pointer" onclick="${clickHandler}">
+                <div class="flex items-center gap-2 mb-2 flex-wrap">${benefitTag}<span class="pill cat-${it.categoria}">${ic(cat.icon,'w-3 h-3')} ${cat.label}</span><span class="pill status-${st}"><span class="st-dot ${st}" style="width:6px;height:6px;border:none;box-shadow:none"></span> ${STATUSES[st].label}</span>${it.prioridad?`<span class="pill priority-${it.prioridad}">${it.prioridad}</span>`:''}</div>
                 <div class="font-bold text-sm text-[var(--dark-blue)] mb-1">${escapeHtml(it.titulo)}</div>
                 <div class="text-xs text-[var(--mid-grey)] truncate-2">${escapeHtml(it.contenido||'')}</div>
               </div>`;
@@ -4774,7 +4979,27 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
               <div><span class="label">Pilar / Temática</span><input type="text" name="pilar" class="input" value="${escapeHtml(it.pilar||'')}" placeholder="Ej: Pre Hot Sale" /></div>
             </div>
 
-            <div class="mb-4"><span class="label">Audiencia</span><div class="flex flex-wrap gap-2">${AUDIENCES.map(a => `<label class="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--lightest-grey)] cursor-pointer hover:border-[var(--nimbus-blue)] text-sm"><input type="checkbox" name="audiencia" value="${a}" ${(it.audiencia||[]).includes(a)?'checked':''} />${a}</label>`).join('')}</div></div>
+            <div class="mb-4">
+              <span class="label">Tipo de iniciativa <span class="text-[10px] text-[var(--mid-grey)]">(opcional · tag transversal)</span></span>
+              <div class="flex flex-wrap gap-2">
+                ${INITIATIVE_TYPE_TAGS.map(t => `<label class="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--lightest-grey)] cursor-pointer hover:border-[var(--nimbus-blue)] text-xs"><input type="radio" name="tipo_iniciativa" value="${t}" ${(it.tipo_iniciativa===t)?'checked':''} />${t}</label>`).join('')}
+                <label class="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--lightest-grey)] cursor-pointer hover:border-[var(--nimbus-blue)] text-xs"><input type="radio" name="tipo_iniciativa" value="" ${!it.tipo_iniciativa?'checked':''} />Sin tag</label>
+              </div>
+            </div>
+
+            <div class="mb-4">
+              <span class="label">Audiencia</span>
+              <div class="flex flex-wrap gap-2">
+                ${AUDIENCES.map(a => `<label class="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--lightest-grey)] cursor-pointer hover:border-[var(--nimbus-blue)] text-sm"><input type="checkbox" name="audiencia" value="${a}" ${(it.audiencia||[]).includes(a)?'checked':''} />${a}</label>`).join('')}
+                <label class="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--lightest-grey)] cursor-pointer hover:border-[var(--nimbus-blue)] text-sm">
+                  <input type="checkbox" id="audiencia-segmentada-chk" ${it.audiencia_segmentada?'checked':''} onchange="document.getElementById('audiencia-segmentada-wrap').style.display = this.checked ? 'block' : 'none'" />
+                  Audiencia segmentada
+                </label>
+              </div>
+              <div id="audiencia-segmentada-wrap" style="display:${it.audiencia_segmentada?'block':'none'}; margin-top:8px">
+                <input type="text" name="audiencia_segmentada" class="input" placeholder="¿Qué segmento? Ej: Agencias Gold+, Merchants Plan C, Top 10 GMV…" value="${escapeHtml(it.audiencia_segmentada||'')}" />
+              </div>
+            </div>
             <div class="mb-4"><span class="label">Descripción / Brief corto</span><textarea name="contenido" class="textarea" rows="3" placeholder="¿De qué se trata?">${escapeHtml(it.contenido||'')}</textarea></div>
             <div class="mb-4"><span class="label">Owners</span><input type="text" name="owners" class="input" placeholder="Ej: Daniela Pereyra, Mauro Dri" value="${escapeHtml((it.owners||[]).join(', '))}" /></div>
 
@@ -4782,8 +5007,17 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
               <summary class="flex items-center justify-between font-semibold text-sm h-heading"><span>Avanzado · copy, links, comentarios</span>${ic('chevron-down','chev w-4 h-4')}</summary>
               <div class="mt-3 space-y-3">
                 <div><span class="label">Copy / Pieza</span><textarea name="copy" class="textarea" rows="6" placeholder="Pegá el copy completo (emojis OK).">${escapeHtml(it.copy||'')}</textarea></div>
-                <div><span class="label">Link a brief / HubSpot / Drive</span><input type="text" name="link" class="input" value="${escapeHtml((it.links&&it.links[0]&&it.links[0].url)||'')}" placeholder="https://…" /></div>
                 <div><span class="label">Comentarios del equipo</span><textarea name="comentarios" class="textarea" rows="2">${escapeHtml(it.comentarios||'')}</textarea></div>
+                <div>
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="label">Anexos / links</span>
+                    <button type="button" class="btn btn-ghost btn-xs" onclick="addItemLinkRow()">${ic('plus','w-3 h-3')} Sumar link</button>
+                  </div>
+                  <div id="item-links-list" class="space-y-2">
+                    ${(it.links||[]).filter(l => l && l.url).map(l => itemLinkRowHTML(l.label, l.url)).join('')}
+                  </div>
+                  <p class="text-[10px] text-[var(--mid-grey)] mt-1">Sumá tantos links como necesites · HubSpot, Drive, Briefs, Métricas, etc. Cada uno con su etiqueta.</p>
+                </div>
               </div>
             </details>
 
@@ -4847,17 +5081,24 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
         e.preventDefault();
         const fd = new FormData(e.target);
         const titulo = fd.get('titulo'); const fecha = fd.get('fecha');
+        // Lee links del nuevo formulario multi-link
+        const links = readItemLinksFromForm();
+        // Audiencia segmentada
+        const audiencia_segmentada_chk = document.getElementById('audiencia-segmentada-chk');
+        const audiencia_segmentada = audiencia_segmentada_chk && audiencia_segmentada_chk.checked ? (fd.get('audiencia_segmentada') || '') : '';
         const data = {
           tipo: fd.get('tipo'), categoria: fd.get('categoria'),
           cluster: fd.get('cluster'), titulo, fecha: fecha || null,
           audiencia: fd.getAll('audiencia'), canales: [],
+          audiencia_segmentada,
+          tipo_iniciativa: fd.get('tipo_iniciativa') || '',
           contenido: fd.get('contenido') || '', copy: fd.get('copy') || '',
           status: fd.get('status') || 'programado',
           owners: (fd.get('owners')||'').split(',').map(s=>s.trim()).filter(Boolean),
           prioridad: fd.get('prioridad'),
           pilar: fd.get('pilar') || '',
           comentarios: fd.get('comentarios') || '',
-          links: fd.get('link') ? [{label:'Link', url:fd.get('link')}] : [],
+          links: links.length ? links : (fd.get('link') ? [{label:'Link', url:fd.get('link')}] : []),
         };
         if (editId) {
           const it = state.items.find(x => x.id===editId);
@@ -5084,7 +5325,13 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
 
         // Aplicar filtros
         let filtered = state.benefits;
-        if (monthFilter !== 'all') {
+        if (monthFilter === 'this-month') {
+          const tk = today.toISOString().slice(0,7);
+          filtered = filtered.filter(b => {
+            const d = b.fecha_publicado || b.fecha_objetivo;
+            return d && d.startsWith(tk);
+          });
+        } else if (monthFilter !== 'all') {
           filtered = filtered.filter(b => {
             const d = b.fecha_publicado || b.fecha_objetivo;
             return d && d.startsWith(monthFilter);
@@ -5094,10 +5341,38 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
           filtered = filtered.filter(b => b.tipo_beneficio === tipoFilter);
         }
 
-        // Opciones para filtro de mes
-        const monthOptions = [...new Set(state.benefits.map(b => (b.fecha_publicado||b.fecha_objetivo||'').slice(0,7)).filter(Boolean))].sort().reverse();
+        // Counts smart: total, mes actual, trimestre actual, año actual
+        const tkMonth = today.toISOString().slice(0,7);
+        const currentQ = Math.floor(today.getMonth() / 3); // 0-indexed
+        const qStartMonth = currentQ * 3;
+        const qEndMonth = qStartMonth + 2;
+        const counts = {
+          total: state.benefits.length,
+          thisMonth: state.benefits.filter(b => {
+            const d = b.fecha_publicado || b.fecha_objetivo;
+            return d && d.startsWith(tkMonth);
+          }).length,
+          thisQ: state.benefits.filter(b => {
+            const d = b.fecha_publicado || b.fecha_objetivo;
+            if (!d) return false;
+            const m = parseInt(d.slice(5,7)) - 1;
+            return d.startsWith(today.getFullYear()+'') && m >= qStartMonth && m <= qEndMonth;
+          }).length,
+        };
 
-        // Agrupar por tipo de iniciativa (no por status)
+        // Opciones para filtro de mes: meses presentes + meses futuros (12 meses adelante para incluir lo que viene)
+        const monthsWithData = new Set(state.benefits.map(b => (b.fecha_publicado||b.fecha_objetivo||'').slice(0,7)).filter(Boolean));
+        // Agregar próximos 12 meses para selección de futuros
+        for (let i = -3; i <= 12; i++) {
+          const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+          monthsWithData.add(d.toISOString().slice(0,7));
+        }
+        const monthOptions = [...monthsWithData].sort();
+
+        // Capacidad por tipo · matchear con state.benefit_caps
+        const caps = state.benefit_caps || {};
+
+        // Agrupar por tipo de iniciativa
         const groups = {};
         Object.keys(BENEFIT_TYPES).forEach(k => groups[k] = []);
         filtered.forEach(b => {
@@ -5105,22 +5380,45 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
           groups[b.tipo_beneficio].push(b);
         });
 
+        // Items DEL MES ACTUAL por tipo (para calcular capacity warnings)
+        const itemsThisMonthByType = {};
+        Object.keys(BENEFIT_TYPES).forEach(k => itemsThisMonthByType[k] = 0);
+        state.benefits.filter(b => {
+          const d = b.fecha_publicado || b.fecha_objetivo;
+          return d && d.startsWith(tkMonth);
+        }).forEach(b => {
+          itemsThisMonthByType[b.tipo_beneficio] = (itemsThisMonthByType[b.tipo_beneficio] || 0) + 1;
+        });
+
         // Render cada grupo
         const groupsHTML = Object.entries(BENEFIT_TYPES)
           .filter(([k, v]) => (groups[k] || []).length > 0 || tipoFilter === k)
           .map(([k, v]) => {
             const items = (groups[k] || []).sort((a,b) => (a.fecha_publicado || a.fecha_objetivo || '9999').localeCompare(b.fecha_publicado || b.fecha_objetivo || '9999'));
+            const cap = caps[k] || null;
+            const monthCount = itemsThisMonthByType[k] || 0;
+            let capBadge = '';
+            if (cap && cap.value) {
+              const periodLabel = (PERIOD_LABELS[cap.period] || {label:'mes'}).label;
+              const overCap = monthCount > cap.value;
+              capBadge = `<span class="pill text-[10px]" style="background:${overCap?'#fee2e2':'#f0fdf4'};color:${overCap?'#b91c1c':'#166534'};padding:2px 8px" title="Capacidad: ${cap.value} por ${periodLabel}">
+                ${overCap ? '⚠️' : '✓'} ${monthCount}/${cap.value} ${periodLabel}
+              </span>`;
+            }
             return `
               <div class="bg-white rounded-2xl border border-[#e4e4e7] overflow-hidden mb-4">
                 <div class="px-5 py-4 flex items-center gap-3 flex-wrap" style="background: linear-gradient(90deg, ${v.color}08 0%, transparent 60%); border-bottom: 1px solid #e4e4e7;">
                   <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style="background:${v.color}15;color:${v.color}">${ic(v.icon,'w-5 h-5')}</div>
                   <div class="flex-1 min-w-0">
-                    <h3 class="font-bold h-heading">${escapeHtml(v.label)}</h3>
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <h3 class="font-bold h-heading">${escapeHtml(v.label)}</h3>
+                      ${capBadge}
+                    </div>
                     <p class="text-xs text-[var(--mid-grey)]">${escapeHtml(v.desc)}</p>
                   </div>
                   <div class="text-right shrink-0">
                     <div class="text-2xl font-extrabold h-heading">${items.length}</div>
-                    <div class="text-[10px] uppercase tracking-wider text-[var(--mid-grey)] font-semibold">slot${items.length===1?'':'s'}</div>
+                    <div class="text-[10px] uppercase tracking-wider text-[var(--mid-grey)] font-semibold">cargad${items.length===1?'a':'as'}</div>
                   </div>
                   ${isAdmin() ? `<button class="btn btn-secondary btn-xs" onclick="openNewBenefitDrawer(null, null, '${k}')">${ic('plus','w-3 h-3')} Sumar</button>` : ''}
                 </div>
@@ -5140,6 +5438,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
               <p class="text-xs text-[var(--mid-grey)]">Acciones y beneficios con agencias seleccionadas: UGC, sponsoreos de evento, casos de éxitos, webinars exclusivos, etc.</p>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
+              <button class="btn ${monthFilter==='this-month'?'btn-primary':'btn-secondary'} btn-sm" onclick="state._beneMonth='this-month'; renderAll();">${ic('calendar','w-3 h-3')} Este mes</button>
               <select class="select" style="width:auto;padding:6px 12px;font-size:13px" onchange="state._beneMonth=this.value; renderAll();">
                 <option value="all" ${monthFilter==='all'?'selected':''}>Todos los meses</option>
                 ${monthOptions.map(m => {
@@ -5152,19 +5451,101 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
                 ${Object.entries(BENEFIT_TYPES).map(([k,v]) => `<option value="${k}" ${tipoFilter===k?'selected':''}>${v.label}</option>`).join('')}
               </select>
               ${isAdmin() ? `
-                <button class="btn btn-secondary btn-sm" onclick="openInitiativeTypesEditor()" title="Editar tipos de iniciativa">${ic('settings','w-3 h-3')} Editar tipos</button>
+                <button class="btn btn-secondary btn-sm" onclick="openInitiativeCapsEditor()" title="Editar capacidad/slots por tipo">${ic('gauge','w-3 h-3')} Capacidad</button>
+                <button class="btn btn-secondary btn-sm" onclick="openInitiativeTypesEditor()" title="Editar tipos de iniciativa">${ic('settings','w-3 h-3')} Tipos</button>
                 <button class="btn btn-primary btn-sm" onclick="openNewBenefitDrawer()">${ic('plus','w-3 h-3')} Nueva iniciativa</button>
               ` : ''}
             </div>
           </div>
 
-          <p class="text-xs text-[var(--mid-grey)] mb-4 px-1">${filtered.length} iniciativa${filtered.length===1?'':'s'} ${monthFilter!=='all' ? 'en '+new Date(monthFilter+'-01T12:00:00').toLocaleDateString('es-AR',{month:'long',year:'numeric'}) : 'en total'}.</p>
+          <!-- Counts smart -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+            <div class="bg-white rounded-xl border border-[#e4e4e7] p-3">
+              <div class="text-[10px] uppercase tracking-wider text-[var(--mid-grey)] font-semibold">Este mes</div>
+              <div class="text-xl font-extrabold h-heading">${counts.thisMonth}</div>
+              <div class="text-[10px] text-[var(--mid-grey)]">iniciativas</div>
+            </div>
+            <div class="bg-white rounded-xl border border-[#e4e4e7] p-3">
+              <div class="text-[10px] uppercase tracking-wider text-[var(--mid-grey)] font-semibold">Q${currentQ+1} ${today.getFullYear()}</div>
+              <div class="text-xl font-extrabold h-heading">${counts.thisQ}</div>
+              <div class="text-[10px] text-[var(--mid-grey)]">iniciativas</div>
+            </div>
+            <div class="bg-white rounded-xl border border-[#e4e4e7] p-3">
+              <div class="text-[10px] uppercase tracking-wider text-[var(--mid-grey)] font-semibold">Filtro actual</div>
+              <div class="text-xl font-extrabold h-heading">${filtered.length}</div>
+              <div class="text-[10px] text-[var(--mid-grey)]">resultado${filtered.length===1?'':'s'}</div>
+            </div>
+            <div class="bg-white rounded-xl border border-[#e4e4e7] p-3">
+              <div class="text-[10px] uppercase tracking-wider text-[var(--mid-grey)] font-semibold">Total cargadas</div>
+              <div class="text-xl font-extrabold h-heading">${counts.total}</div>
+              <div class="text-[10px] text-[var(--mid-grey)]">en el hub</div>
+            </div>
+          </div>
 
           ${groupsHTML || `<div class="bg-white rounded-2xl border border-[#e4e4e7] p-10 text-center"><p class="text-sm text-[var(--mid-grey)] mb-3">No hay iniciativas con los filtros aplicados.</p>${isAdmin() ? `<button class="btn btn-primary btn-sm" onclick="openNewBenefitDrawer()">${ic('plus','w-3 h-3')} Sumar primera iniciativa</button>` : ''}</div>`}
 
-          <p class="text-xs text-[var(--mid-grey)] mt-4">💡 Cada iniciativa con fecha aparece también en el <strong>Calendario condensado</strong> con el ícono 🎁 para que equipos externos la vean en contexto.</p>
+          <p class="text-xs text-[var(--mid-grey)] mt-4">💡 Cada iniciativa con fecha aparece también en el <strong>Calendario condensado</strong> con el ícono 🎁. Los warnings de capacidad son visuales — podés cargar más de lo permitido, sirve para accountability con equipos externos.</p>
         `;
       }
+      // Editor de capacidad (slots) por tipo de iniciativa
+      function openInitiativeCapsEditor() {
+        if (!isAdmin()) return;
+        const modal = document.getElementById('lib-modal');
+        const caps = state.benefit_caps || {};
+        const periods = ['mensual', 'bimestral', 'trimestral', 'sin_limite'];
+        const rowsHTML = Object.entries(BENEFIT_TYPES).map(([k, v]) => {
+          const c = caps[k] || { value: 0, period: 'mensual' };
+          return `
+            <div class="flex items-center gap-3 py-3 border-b border-[#e4e4e7]" data-cap-key="${k}">
+              <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style="background:${v.color}15;color:${v.color}">${ic(v.icon,'w-4 h-4')}</div>
+              <div class="flex-1 min-w-0">
+                <div class="font-bold h-heading text-sm">${escapeHtml(v.label)}</div>
+                <div class="text-[10px] text-[var(--mid-grey)]">${escapeHtml(v.desc)}</div>
+              </div>
+              <input type="number" min="0" class="input" style="width:80px" data-field="value" value="${c.value || 0}" placeholder="N" />
+              <select class="select" style="width:120px" data-field="period">
+                ${periods.map(p => `<option value="${p}" ${c.period===p?'selected':''}>${(PERIOD_LABELS[p]||{label:p}).label}</option>`).join('')}
+              </select>
+            </div>
+          `;
+        }).join('');
+        modal.innerHTML = `
+          <div class="modal-card" style="max-width:780px">
+            <div class="p-6 border-b border-[#e4e4e7] flex items-center justify-between">
+              <div>
+                <h3 class="text-xl font-extrabold h-heading">Capacidad por tipo de iniciativa</h3>
+                <p class="text-xs text-[var(--mid-grey)] mt-1">Definí cuántos slots tenés disponibles por mes/bimestre/trimestre. Es solo informativo: podés cargar más, sirve para accountability.</p>
+              </div>
+              <button class="btn btn-ghost" onclick="closeLibModal()">${ic('x','w-5 h-5')}</button>
+            </div>
+            <div class="p-6 max-h-[60vh] overflow-y-auto">${rowsHTML}</div>
+            <div class="p-4 border-t border-[#e4e4e7] flex justify-end gap-2">
+              <button class="btn btn-ghost btn-sm" onclick="closeLibModal()">Cancelar</button>
+              <button class="btn btn-primary btn-sm" onclick="saveInitiativeCaps()">${ic('check','w-3 h-3')} Guardar capacidad</button>
+            </div>
+          </div>
+        `;
+        modal.classList.add('open');
+        if (window.lucide) lucide.createIcons();
+      }
+      function saveInitiativeCaps() {
+        const modal = document.getElementById('lib-modal');
+        const newCaps = {};
+        modal.querySelectorAll('[data-cap-key]').forEach(row => {
+          const k = row.dataset.capKey;
+          const value = parseInt(row.querySelector('[data-field="value"]').value) || 0;
+          const period = row.querySelector('[data-field="period"]').value;
+          newCaps[k] = { value, period };
+        });
+        state.benefit_caps = newCaps;
+        try { localStorage.setItem('pmh_caps', JSON.stringify(newCaps)); } catch(e) {}
+        if (typeof api_saveConfig === 'function') api_saveConfig('benefit_caps', newCaps);
+        closeLibModal();
+        renderAll();
+        toast('✓ Capacidad guardada');
+      }
+      window.openInitiativeCapsEditor = openInitiativeCapsEditor;
+      window.saveInitiativeCaps = saveInitiativeCaps;
       function benefitCardHTML(b) {
         const bt = BENEFIT_TYPES[b.tipo_beneficio] || { label: 'Otro', color: '#9ca3af', icon: 'circle' };
         const fmt = b.formato ? UGC_FORMATS[b.formato] : null;
@@ -5520,6 +5901,13 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
                 ${Object.entries(BENEFIT_TYPES).map(([k,v]) => `<option value="${k}" ${tipo===k?'selected':''}>${v.label}</option>`).join('')}
               </select>
             </div>
+            <div class="mb-4">
+              <span class="label">Tipo de iniciativa <span class="text-[10px] text-[var(--mid-grey)]">(opcional · tag transversal)</span></span>
+              <div class="flex flex-wrap gap-2">
+                ${INITIATIVE_TYPE_TAGS.map(t => `<label class="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--lightest-grey)] cursor-pointer hover:border-[var(--nimbus-blue)] text-xs"><input type="radio" name="tipo_iniciativa" value="${t}" ${(b.tipo_iniciativa===t)?'checked':''} />${t}</label>`).join('')}
+                <label class="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--lightest-grey)] cursor-pointer hover:border-[var(--nimbus-blue)] text-xs"><input type="radio" name="tipo_iniciativa" value="" ${!b.tipo_iniciativa?'checked':''} />Sin tag</label>
+              </div>
+            </div>
 
             <div class="grid grid-cols-2 gap-3 mb-4">
               <div><span class="label">Agencia</span><input type="text" name="agencia" class="input" value="${escapeHtml(b.agencia||'')}" required /></div>
@@ -5652,6 +6040,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
         const fd = new FormData(e.target);
         const data = {
           tipo_beneficio: fd.get('tipo_beneficio'),
+          tipo_iniciativa: fd.get('tipo_iniciativa') || '',
           agencia: fd.get('agencia'),
           fecha_objetivo: fd.get('fecha_objetivo') || null,
           fecha_publicado: fd.get('fecha_publicado') || null,

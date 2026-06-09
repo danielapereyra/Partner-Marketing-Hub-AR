@@ -1780,17 +1780,26 @@
               return (order[statusOf(a)]||9) - (order[statusOf(b)]||9);
             });
             const isToday = sameDay(c.d, today);
-            // Priorizar diversidad: si en el día hay acciones Y comms, mostrar al menos 1 de cada
+            // Priorizar diversidad: si en el día hay iniciativas/acciones Y comms, mostrar al menos 1 de cada tipo
+            // Iniciativas (benefit virtuals) tienen prioridad sobre acciones planas porque tienen más data
             const MAX_VIS = 3;
-            const acciones = dayItems.filter(i => i.tipo === 'accion' || i._benefit_id);
-            const comms = dayItems.filter(i => !(i.tipo === 'accion' || i._benefit_id));
+            const benefits = dayItems.filter(i => i._benefit_id);
+            const accionesPlanas = dayItems.filter(i => i.tipo === 'accion' && !i._benefit_id);
+            const comms = dayItems.filter(i => i.tipo !== 'accion' && !i._benefit_id);
+            const acciones = [...benefits, ...accionesPlanas]; // benefits primero
             let visible;
             if (acciones.length && comms.length) {
-              // Mix: al menos 1 acción + 1 comm, llenar con el tipo más numeroso
+              // Mix: al menos 1 acción (priorizando benefit) + 1 comm, llenar con el tipo más numeroso
               visible = [acciones[0], comms[0]];
               if (visible.length < MAX_VIS) {
-                if (acciones.length >= comms.length && acciones.length > 1) visible.push(acciones[1]);
-                else if (comms.length > 1) visible.push(comms[1]);
+                // Si hay benefit Y acción plana, asegurar que se vean ambos antes que una segunda comm
+                if (benefits.length && accionesPlanas.length && !visible.includes(accionesPlanas[0])) {
+                  visible.push(accionesPlanas[0]);
+                } else if (acciones.length >= comms.length && acciones.length > 1) {
+                  visible.push(acciones[1]);
+                } else if (comms.length > 1) {
+                  visible.push(comms[1]);
+                }
               }
             } else {
               visible = dayItems.slice(0, MAX_VIS);

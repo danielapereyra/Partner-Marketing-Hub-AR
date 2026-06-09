@@ -1346,15 +1346,35 @@
         };
       }
       function getAllCalendarItems() {
-        const virtuals = (state.benefits || [])
-          .filter(b => b && (b.fecha_publicado || b.fecha_objetivo))
-          .map(b => {
-            try { return benefitToVirtualItem(b); }
-            catch(e) { console.warn('[calendar] No pude convertir iniciativa', b?.id, e); return null; }
-          })
-          .filter(Boolean);
+        const benefits = state.benefits || [];
+        const benefitsWithDate = benefits.filter(b => b && (b.fecha_publicado || b.fecha_objetivo));
+        const benefitsSkipped = benefits.length - benefitsWithDate.length;
+        if (benefitsSkipped > 0) {
+          console.debug(`[calendar] ${benefitsSkipped} iniciativas sin fecha (no aparecerán). Corré debugCalendarBenefits() para detalles.`);
+        }
+        const virtuals = benefitsWithDate.map(b => {
+          try {
+            const v = benefitToVirtualItem(b);
+            // Normalizar fecha: si viene con time component, truncar a YYYY-MM-DD
+            if (v.fecha && typeof v.fecha === 'string' && v.fecha.length > 10) v.fecha = v.fecha.slice(0, 10);
+            return v;
+          } catch(e) {
+            console.warn('[calendar] Error convirtiendo iniciativa', b?.id, b?.tipo_beneficio, e);
+            return null;
+          }
+        }).filter(Boolean);
         return [...state.items, ...virtuals];
       }
+      // Helper para forzar re-sync con backend (uso: window.fixCalendarSync() desde consola)
+      window.fixCalendarSync = async function() {
+        console.log('🔄 Forzando re-sync con backend…');
+        await loadFromBackend();
+        renderAll();
+        console.log(`✅ Re-sync completo. state.items=${state.items.length}, state.benefits=${state.benefits.length}`);
+        const virtuals = getAllCalendarItems().filter(it => it._benefit_id);
+        console.log(`   Virtuales del calendario generados: ${virtuals.length} de ${state.benefits.length} iniciativas`);
+        return { items: state.items.length, benefits: state.benefits.length, virtuals: virtuals.length };
+      };
 
       // ============== ROLE / WELCOME ==============
       function chooseRole(r) {

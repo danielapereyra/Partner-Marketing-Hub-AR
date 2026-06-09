@@ -968,9 +968,19 @@
       }
 
       // Save individual con manejo de error optimista (el state local ya cambió)
-      async function api_saveItem(item)       { try { setSyncStatus('syncing'); await api('POST', '/api/items', item); setSyncStatus('ok'); } catch(e) { setSyncStatus('error', '⚠️ No se pudo guardar al servidor'); console.error(e); } }
+      // Helper: empaqueta campos extra dentro de metadata para que la API JSONB los persista
+      // (tipo_iniciativa, audiencia_segmentada, etc. — no son columnas dedicadas en Postgres)
+      function packExtraFields(obj) {
+        const metadata = { ...(obj.metadata || {}) };
+        const extras = ['tipo_iniciativa', 'audiencia_segmentada'];
+        for (const k of extras) {
+          if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') metadata[k] = obj[k];
+        }
+        return { ...obj, metadata };
+      }
+      async function api_saveItem(item)       { try { setSyncStatus('syncing'); await api('POST', '/api/items', packExtraFields(item)); setSyncStatus('ok'); } catch(e) { setSyncStatus('error', '⚠️ No se pudo guardar al servidor'); console.error(e); } }
       async function api_deleteItem(id)       { try { setSyncStatus('syncing'); await api('DELETE', '/api/items?id=' + encodeURIComponent(id)); setSyncStatus('ok'); } catch(e) { setSyncStatus('error'); console.error(e); } }
-      async function api_saveBenefit(b)       { try { setSyncStatus('syncing'); await api('POST', '/api/benefits', b); setSyncStatus('ok'); } catch(e) { setSyncStatus('error'); console.error(e); } }
+      async function api_saveBenefit(b)       { try { setSyncStatus('syncing'); await api('POST', '/api/benefits', packExtraFields(b)); setSyncStatus('ok'); } catch(e) { setSyncStatus('error'); console.error(e); } }
       async function api_deleteBenefit(id)    { try { setSyncStatus('syncing'); await api('DELETE', '/api/benefits?id=' + encodeURIComponent(id)); setSyncStatus('ok'); } catch(e) { setSyncStatus('error'); console.error(e); } }
       async function api_saveLibrary(it)      { try { setSyncStatus('syncing'); await api('POST', '/api/library', it); setSyncStatus('ok'); } catch(e) { setSyncStatus('error'); console.error(e); } }
       async function api_deleteLibrary(id)    { try { setSyncStatus('syncing'); await api('DELETE', '/api/library?id=' + encodeURIComponent(id)); setSyncStatus('ok'); } catch(e) { setSyncStatus('error'); console.error(e); } }
@@ -1038,6 +1048,8 @@
           setTimeout(() => runPartnersToAgenciesMigration(), 7000);
           // Cleanup de links rotos / duplicados (idempotente)
           setTimeout(() => runLinkAudit(), 10000);
+          // Normalización de pilares (idempotente)
+          setTimeout(() => runPilarNormalizationMigration(), 12000);
         } catch(e) {
           console.error('Error cargando del backend:', e);
           setSyncStatus('error', 'No conecta al servidor · usando datos locales');
@@ -1097,6 +1109,79 @@
         if (created || updated) {
           renderAll();
           toast(`📅 Sincronicé histórico ene-may · ${created} nuevos, ${updated} actualizados`);
+        }
+      }
+
+      // Normalización de pilares · convierte variantes "X · Y" → "X | Y" y reclasifica nomenclaturas no oficiales
+      async function runPilarNormalizationMigration() {
+        const FLAG_KEY = 'pmh_pilar_norm_v1_done';
+        if (localStorage.getItem(FLAG_KEY) === 'done') return;
+        // Pilares OFICIALES (con "|")
+        const OFICIALES = [
+          'Adopción | Partner Program',
+          'Educación | Enablement',
+          'Operación | Procesos',
+          'Novedades | Performance',
+          'Novedades | Informativo',
+          'Novedades | Resumen',
+          'Producto | Lanzamientos',
+          'Oportunidades | Crecimiento',
+          'Tips | Consejos & quick wins',
+        ];
+        // Map: variantes incorrectas → versión oficial
+        const VARIANT_MAP = new Map();
+        OFICIALES.forEach(o => {
+          // versión con "·" en vez de "|"
+          VARIANT_MAP.set(o.replace(' | ', ' · '), o);
+          VARIANT_MAP.set(o.replace(' | ', ' - '), o);
+          VARIANT_MAP.set(o.replace(' | ', ' / '), o);
+        });
+        // Patterns que van a "Operación | Procesos" (textos sueltos no oficiales)
+        const OPERACION_PATTERNS = [
+          /comunicaci[oó]n actualizaci[oó]n t&c/i,
+          /pedido de cx/i,
+          /actualizaci[oó]n.*comisiones/i,
+          /flujo.*comisiones/i,
+          /t&c\s*cambios/i,
+          /encuesta.*product updates/i,
+        ];
+        let updated = 0;
+        for (const it of state.items) {
+          if (!it.pilar || typeof it.pilar !== 'string') continue;
+          const original = it.pilar.trim();
+          let newPilar = null;
+          // Match exacto en VARIANT_MAP
+          if (VARIANT_MAP.has(original)) newPilar = VARIANT_MAP.get(original);
+          // Si ya es oficial, dejar
+          else if (OFICIALES.includes(original)) continue;
+          // Patterns "Operación | Procesos"
+          else if (OPERACION_PATTERNS.some(re => re.test(original))) newPilar = 'Operación | Procesos';
+          // Match fuzzy: si contiene una de las palabras clave de un pilar oficial
+          else {
+            const lower = original.toLowerCase();
+            if (/adopci[oó]n|partner program/.test(lower)) newPilar = 'Adopción | Partner Program';
+            else if (/educaci[oó]n|enablement/.test(lower)) newPilar = 'Educación | Enablement';
+            else if (/operaci[oó]n|procesos/.test(lower)) newPilar = 'Operación | Procesos';
+            else if (/producto|lanzamiento/.test(lower)) newPilar = 'Producto | Lanzamientos';
+            else if (/oportunidad|crecimiento/.test(lower)) newPilar = 'Oportunidades | Crecimiento';
+            else if (/performance/.test(lower)) newPilar = 'Novedades | Performance';
+            else if (/resumen/.test(lower)) newPilar = 'Novedades | Resumen';
+            else if (/informativo|novedades/.test(lower)) newPilar = 'Novedades | Informativo';
+            else if (/tips|quick win|consejos/.test(lower)) newPilar = 'Tips | Consejos & quick wins';
+          }
+          if (newPilar && newPilar !== original) {
+            it.pilar = newPilar;
+            if (typeof api_saveItem === 'function') api_saveItem(it);
+            updated++;
+          }
+        }
+        localStorage.setItem(FLAG_KEY, 'done');
+        if (updated) {
+          console.log(`🧹 Normalización de pilares · ${updated} items actualizados a nomenclatura oficial`);
+          renderAll();
+          toast(`🧹 Normalicé ${updated} pilares a la nomenclatura oficial`);
+        } else {
+          console.log('🧹 Normalización de pilares · todo OK, sin cambios');
         }
       }
 
@@ -1277,6 +1362,11 @@
             try { it[f] = JSON.parse(it[f]); } catch(e) { it[f] = []; }
           }
         });
+        // Hydrate extras desde metadata (tipo_iniciativa, audiencia_segmentada) si no están en top-level
+        if (it.metadata && typeof it.metadata === 'object' && !Array.isArray(it.metadata)) {
+          if (!it.tipo_iniciativa && it.metadata.tipo_iniciativa) it.tipo_iniciativa = it.metadata.tipo_iniciativa;
+          if (!it.audiencia_segmentada && it.metadata.audiencia_segmentada) it.audiencia_segmentada = it.metadata.audiencia_segmentada;
+        }
         // Auto-fix: links legacy guardados como strings sueltos ['https://...'] → [{url, label}]
         if (Array.isArray(it.links)) {
           it.links = it.links.map(l => {
@@ -1303,6 +1393,10 @@
             try { b[f] = JSON.parse(b[f]); } catch(e) { b[f] = []; }
           }
         });
+        // Hydrate extras desde metadata
+        if (b.metadata && typeof b.metadata === 'object' && !Array.isArray(b.metadata)) {
+          if (!b.tipo_iniciativa && b.metadata.tipo_iniciativa) b.tipo_iniciativa = b.metadata.tipo_iniciativa;
+        }
         if (b.fecha_objetivo && typeof b.fecha_objetivo === 'string') b.fecha_objetivo = b.fecha_objetivo.slice(0,10);
         if (b.fecha_publicado && typeof b.fecha_publicado === 'string') b.fecha_publicado = b.fecha_publicado.slice(0,10);
         return b;
@@ -1429,6 +1523,7 @@
           tipo: 'accion',
           categoria: cat,
           tag: bt.label.toUpperCase(),
+          tipo_iniciativa: b.tipo_iniciativa || '',
           titulo,
           fecha: b.fecha_publicado || b.fecha_objetivo,
           cluster: 'ALL',
@@ -1739,10 +1834,12 @@
           catWrap.innerHTML = '';
         }
 
-        // Filtro pilar solo para Comunicaciones
+        // Filtro pilar solo para Comunicaciones · sólo los pilares oficiales (con formato "X | Y")
         if (state.filters.tipo === 'comunicacion') {
-          // Detectar pilares presentes en los items de comunicacion
-          const pilares = [...new Set(state.items.filter(it => it.tipo === 'comunicacion' && it.pilar).map(it => it.pilar))].sort();
+          // Detectar pilares oficiales (los que tienen formato "Foo | Bar")
+          const pilares = [...new Set(state.items
+            .filter(it => it.tipo === 'comunicacion' && it.pilar && it.pilar.includes('|'))
+            .map(it => it.pilar))].sort();
           if (pilares.length) {
             const pilarSelCount = state.filters.pilar ? state.filters.pilar.size : 0;
             const pilarLabel = pilarSelCount ? `${pilarSelCount} pilar${pilarSelCount===1?'':'es'}` : 'Todos los pilares';
@@ -2820,11 +2917,9 @@
         // Por tipo de iniciativa (DEMAND GEN, EDUCATION, etc.)
         const tipoInitiativaCounts = {};
         INITIATIVE_TYPE_TAGS.forEach(t => tipoInitiativaCounts[t] = 0);
-        tipoInitiativaCounts['(sin tag)'] = 0;
         inScope.forEach(it => {
           const t = (it.tipo_iniciativa || '').toString().trim();
           if (t && INITIATIVE_TYPE_TAGS.includes(t)) tipoInitiativaCounts[t]++;
-          else tipoInitiativaCounts['(sin tag)']++;
         });
 
         // Por categoría
@@ -2841,9 +2936,8 @@
           'Enablement': inScope.filter(it => it.categoria === 'enablement').length,
           'Business Cases': inScope.filter(it => it.categoria === 'business_case').length,
           'Sponsorships': inScope.filter(it => it.categoria === 'sponsorship' || it.categoria === 'sponsoreo').length,
-          'Emails': inScope.filter(it => it.categoria === 'email').length,
+          'Emails (incl. newsletter)': inScope.filter(it => it.categoria === 'email' || it.categoria === 'newsletter').length,
           'WhatsApp / Comunidad': inScope.filter(it => it.categoria === 'whatsapp' || it.categoria === 'comunidad').length,
-          'Newsletters': inScope.filter(it => it.categoria === 'newsletter').length,
         };
 
         function kpiCard(icon, label, value, color, sub) {
@@ -2875,13 +2969,29 @@
           </div>`).join('');
 
         const maxTipo = Math.max(1, ...Object.values(tipoInitiativaCounts));
-        const tipoColors = { 'DEMAND GEN':'#0050c3','EDUCATION':'#16a34a','ENGAGEMENT':'#be185d','ADOPTION':'#9333ea','OTHER':'#64748b','(sin tag)':'#9ca3af' };
+        const tipoColors = { 'DEMAND GEN':'#0050c3','EDUCATION':'#16a34a','ENGAGEMENT':'#be185d','ADOPTION':'#9333ea','OTHER':'#64748b' };
         const tipoRows = Object.entries(tipoInitiativaCounts)
           .filter(([_,v]) => v > 0)
           .sort((a,b) => b[1]-a[1])
           .map(([k,v]) => `<div class="mb-2">
             <div class="flex items-center justify-between text-xs mb-1"><span class="font-semibold">${k}</span><span class="font-bold h-heading">${v}</span></div>
             <div class="bar"><div class="bar-fill" style="width:${(v/maxTipo)*100}%; background:${tipoColors[k]||'#0050c3'};"></div></div>
+          </div>`).join('');
+
+        // Por pilar (solo comunicaciones · solo pilares con formato "X | Y")
+        const pilarCounts = {};
+        comunicacion.forEach(it => {
+          const p = (it.pilar || '').toString().trim();
+          if (p && p.includes('|')) {
+            pilarCounts[p] = (pilarCounts[p] || 0) + 1;
+          }
+        });
+        const maxPilar = Math.max(1, ...Object.values(pilarCounts));
+        const pilarRows = Object.entries(pilarCounts)
+          .sort((a,b) => b[1]-a[1])
+          .map(([k,v]) => `<div class="mb-2">
+            <div class="flex items-center justify-between text-xs mb-1"><span class="font-semibold">${escapeHtml(k)}</span><span class="font-bold h-heading">${v}</span></div>
+            <div class="bar"><div class="bar-fill" style="width:${(v/maxPilar)*100}%; background:#0050c3;"></div></div>
           </div>`).join('');
 
         const dashboardCard = `
@@ -2936,6 +3046,16 @@
               <p class="text-xs text-[var(--mid-grey)] mb-4">Distribución entre DEMAND GEN, EDUCATION, ENGAGEMENT, ADOPTION (tag transversal opcional).</p>
               ${tipoRows || `<p class="text-sm text-[var(--mid-grey)]">Aún no se taguearon iniciativas en este periodo.</p>`}
             </div>
+          </div>
+
+          <!-- Comunicaciones por pilar -->
+          <div class="bg-white rounded-2xl card-shadow p-6 mb-6">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-bold h-heading flex items-center gap-2">${ic('layers','w-5 h-5')} Comunicaciones por pilar</h3>
+              <span class="text-xs text-[var(--mid-grey)]">${scopeLabel} · ${comunicacion.length} comms</span>
+            </div>
+            <p class="text-xs text-[var(--mid-grey)] mb-4">Distribución de las comunicaciones según pilar editorial (Adopción, Educación, Operación, etc.).</p>
+            ${pilarRows || `<p class="text-sm text-[var(--mid-grey)]">No hay comunicaciones con pilar asignado en este periodo.</p>`}
           </div>
 
           <!-- Comparativa Q por Q (siempre del año actual) -->
@@ -4460,6 +4580,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
               <div class="flex items-center gap-2 mb-2 flex-wrap">
                 <span class="pill cat-${it.categoria}">${ic(cat.icon,'w-3 h-3')} ${cat.label}</span>
                 ${it.tag ? `<span class="pill" style="background:#f0f1f5;color:#494b4d">${it.tag}</span>` : ''}
+                ${it.tipo_iniciativa ? `<span class="pill" style="background:#ede9fe;color:#6d28d9;font-weight:700;letter-spacing:0.5px">${escapeHtml(it.tipo_iniciativa)}</span>` : ''}
                 <span class="pill status-${st}"><span class="st-dot ${st}" style="width:6px;height:6px;border:none;box-shadow:none"></span> ${STATUSES[st].label}</span>
                 ${it.status && it.status !== st ? `<span class="pill" style="background:#f0f1f5;color:#494b4d">${SUB_STATUS_LABELS[it.status]||it.status}</span>` : ''}
                 ${it.prioridad ? `<span class="pill priority-${it.prioridad}">${it.prioridad}</span>` : ''}
@@ -5438,7 +5559,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
               <p class="text-xs text-[var(--mid-grey)]">Acciones y beneficios con agencias seleccionadas: UGC, sponsoreos de evento, casos de éxitos, webinars exclusivos, etc.</p>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
-              <button class="btn ${monthFilter==='this-month'?'btn-primary':'btn-secondary'} btn-sm" onclick="state._beneMonth='this-month'; renderAll();">${ic('calendar','w-3 h-3')} Este mes</button>
+              <button class="btn ${monthFilter==='this-month'?'btn-primary':'btn-secondary'} btn-sm" onclick="state._beneMonth = (state._beneMonth==='this-month' ? 'all' : 'this-month'); renderAll();" title="${monthFilter==='this-month'?'Click para volver a todos los meses':'Click para filtrar al mes actual'}">${ic('calendar','w-3 h-3')} Este mes${monthFilter==='this-month'?' ✓':''}</button>
               <select class="select" style="width:auto;padding:6px 12px;font-size:13px" onchange="state._beneMonth=this.value; renderAll();">
                 <option value="all" ${monthFilter==='all'?'selected':''}>Todos los meses</option>
                 ${monthOptions.map(m => {
@@ -5459,7 +5580,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
           </div>
 
           <!-- Counts smart -->
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
             <div class="bg-white rounded-xl border border-[#e4e4e7] p-3">
               <div class="text-[10px] uppercase tracking-wider text-[var(--mid-grey)] font-semibold">Este mes</div>
               <div class="text-xl font-extrabold h-heading">${counts.thisMonth}</div>
@@ -5474,11 +5595,6 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
               <div class="text-[10px] uppercase tracking-wider text-[var(--mid-grey)] font-semibold">Filtro actual</div>
               <div class="text-xl font-extrabold h-heading">${filtered.length}</div>
               <div class="text-[10px] text-[var(--mid-grey)]">resultado${filtered.length===1?'':'s'}</div>
-            </div>
-            <div class="bg-white rounded-xl border border-[#e4e4e7] p-3">
-              <div class="text-[10px] uppercase tracking-wider text-[var(--mid-grey)] font-semibold">Total cargadas</div>
-              <div class="text-xl font-extrabold h-heading">${counts.total}</div>
-              <div class="text-[10px] text-[var(--mid-grey)]">en el hub</div>
             </div>
           </div>
 
@@ -5742,6 +5858,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
             <div class="min-w-0">
               <div class="flex items-center gap-2 mb-2 flex-wrap">
                 <span class="pill" style="background:${bt.color}15;color:${bt.color}">${ic(bt.icon,'w-3 h-3')} ${bt.label}</span>
+                ${b.tipo_iniciativa ? `<span class="pill" style="background:#ede9fe;color:#6d28d9;font-weight:700;letter-spacing:0.5px">${escapeHtml(b.tipo_iniciativa)}</span>` : ''}
                 ${b.prioridad ? `<span class="pill priority-${b.prioridad}">${b.prioridad}</span>` : ''}
               </div>
               <h2 class="text-xl font-extrabold h-heading">${escapeHtml(b.agencia)}</h2>

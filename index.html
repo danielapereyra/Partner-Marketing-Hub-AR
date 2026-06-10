@@ -113,6 +113,17 @@
       .status-programado { background: #fffbeb; color: #b45309; }
       .status-finalizado { background: #f0fdf4; color: #15803d; }
       .status-on_hold { background: #fff7ed; color: #c2410c; }
+      .status-cancelado { background: #f4f4f5; color: #6b7280; }
+      .st-dot.cancelado { background: #9ca3af; box-shadow: 0 0 0 2px #9ca3af20; }
+      /* Items cancelados en el calendario: gris tachado, opacidad reducida */
+      .cal-event.cancelled {
+        opacity: 0.55;
+        text-decoration: line-through;
+        background: #f4f4f5 !important;
+        color: #6b7280 !important;
+        border: 1px dashed #d1d5db;
+      }
+      .cal-event.cancelled:hover { opacity: 0.75; }
 
       .priority-P1 { background: #fee2e2; color: #b91c1c; }
       .priority-P2 { background: #fef3c7; color: #92400e; }
@@ -651,6 +662,7 @@
         programado:  { label: 'Programado', color: '#eab308', sub: ['programado'] },
         finalizado:  { label: 'Finalizado', color: '#16a34a', sub: ['finalizado','enviado'] },
         on_hold:     { label: 'On hold',    color: '#f97316', sub: ['on_hold'] },
+        cancelado:   { label: 'Cancelado',  color: '#9ca3af', sub: ['cancelado'] },
       };
       // Sub-status (granular original)
       const SUB_STATUS_LABELS = {
@@ -662,10 +674,12 @@
         finalizado: 'Finalizado',
         enviado: 'Enviado',
         on_hold: 'On hold',
+        cancelado: 'Cancelado',
       };
 
       function statusOf(it) {
         const orig = it.status || '';
+        if (orig === 'cancelado') return 'cancelado';
         if (['finalizado','enviado'].includes(orig)) return 'finalizado';
         if (orig === 'programado') return 'programado';
         if (orig === 'on_hold') return 'on_hold';
@@ -774,6 +788,7 @@
         { id: 'produccion', label: 'En producción',         icon: 'clapperboard', color: '#f59e0b' },
         { id: 'publicado',  label: 'Publicado/Ejecutado',   icon: 'check-circle', color: '#16a34a' },
         { id: 'medido',     label: 'Medido & cerrado',      icon: 'bar-chart-3',  color: '#3b82f6' },
+        { id: 'cancelado',  label: 'Cancelado',             icon: 'x-circle',     color: '#9ca3af' },
       ];
 
       const AGENCY_TIERS = {
@@ -1501,7 +1516,18 @@
         // Defensive: si el tipo no está en BENEFIT_TYPES, usar un fallback en vez de crashear
         const bt = BENEFIT_TYPES[b.tipo_beneficio] || { label: b.tipo_beneficio || 'Iniciativa', icon: 'flag', color: '#6b7280' };
         const tipoBenef = b.tipo_beneficio || '';
-        const stageToStatus = ({ idea:'backlog', briefeado:'briefeado', produccion:'en_proceso', publicado:'finalizado', medido:'enviado' });
+        // Mapeo etapa iniciativa → status calendario · permite filtrar uniformemente desde la tab Calendario
+        // briefeado/produccion → "programado" (están en pipeline activo)
+        // publicado/medido → "finalizado" (ya ejecutado)
+        // cancelado → "cancelado"
+        const stageToStatus = ({
+          idea: 'backlog',
+          briefeado: 'programado',
+          produccion: 'programado',
+          publicado: 'finalizado',
+          medido: 'finalizado',
+          cancelado: 'cancelado',
+        });
         // Mapeo extendido: pocket_event/evento_oficina → pocket_event; sponsorship → sponsorship; otros → ugc o big_event
         const cat = tipoBenef === 'sponsorship' ? 'sponsorship'
                   : tipoBenef === 'pocket_event' ? 'pocket_event'
@@ -1979,9 +2005,9 @@
           const cellsHTML = cells.map(c => {
             const key = c.d.toISOString().slice(0,10);
             const dayItems = (itemsByDate[key] || []).sort((a,b) => {
-              // urgent first: pendiente > programado > finalizado
-              const order = { pendiente: 0, programado: 1, on_hold: 2, finalizado: 3 };
-              return (order[statusOf(a)]||9) - (order[statusOf(b)]||9);
+              // urgent first: pendiente > programado > on_hold > finalizado > cancelado (último siempre)
+              const order = { pendiente: 0, programado: 1, on_hold: 2, finalizado: 3, cancelado: 9 };
+              return (order[statusOf(a)]??99) - (order[statusOf(b)]??99);
             });
             const isToday = sameDay(c.d, today);
             // Priorizar diversidad: si en el día hay iniciativas/acciones Y comms, mostrar al menos 1 de cada tipo
@@ -2023,7 +2049,8 @@
                 ? `draggable="true" ondragstart="calDragStart(event, '${it.id}')"`
                 : '';
               const selectedClass = isSelected ? 'cal-event-selected' : '';
-              return `<div class="cal-event cat-${it.categoria} ${selectedClass}" ${dragAttrs} onclick="event.stopPropagation(); ${clickHandler}" title="${escapeHtml(it.titulo)} · ${STATUSES[st].label}${isBenefit?' · Beneficio Agencias':''}">
+              const cancelledClass = st === 'cancelado' ? 'cancelled' : '';
+              return `<div class="cal-event cat-${it.categoria} ${selectedClass} ${cancelledClass}" ${dragAttrs} onclick="event.stopPropagation(); ${clickHandler}" title="${escapeHtml(it.titulo)} · ${STATUSES[st].label}${isBenefit?' · Beneficio Agencias':''}">
                 ${state.selectMode && !isBenefit ? `<span class="cal-select-box">${isSelected?'☑':'☐'}</span>` : ''}
                 <span class="st-dot ${st}"></span>
                 ${ic(cat.icon, 'w-3 h-3 shrink-0')}
@@ -4646,7 +4673,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
 
           <div class="px-6 py-3 border-t border-[var(--lightest-grey)] bg-white flex items-center justify-between flex-wrap gap-2">
             ${isAdmin() ? `<select class="select" style="width:auto;padding:6px 12px;font-size:12px" onchange="changeStatus('${it.id}', this.value)" title="Cambiar status">
-              ${['','backlog','briefeado','en_proceso','programado','finalizado','enviado','on_hold'].map(s => `<option value="${s}" ${(it.status||'')===s?'selected':''}>${SUB_STATUS_LABELS[s]}</option>`).join('')}
+              ${['','backlog','briefeado','en_proceso','programado','finalizado','enviado','on_hold','cancelado'].map(s => `<option value="${s}" ${(it.status||'')===s?'selected':''}>${SUB_STATUS_LABELS[s]}</option>`).join('')}
             </select>` : `<span class="text-xs text-[var(--mid-grey)]">${ic('eye','w-3 h-3 inline')} Solo lectura</span>`}
             <div class="flex items-center gap-2 flex-wrap">
               <button class="btn btn-secondary btn-xs" onclick="copyFullItem('${it.id}')">${ic('clipboard-copy','w-3 h-3')} Copiar todo</button>
@@ -5020,11 +5047,16 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
         // Incluir tanto state.items como los virtuales de iniciativas con la misma fecha
         const allItems = getAllCalendarItems().filter(it => it.fecha === dateStr);
         const items = allItems.sort((a,b)=>{
+          // Cancelados al final siempre, independientemente del tipo
+          const aCanc = statusOf(a) === 'cancelado';
+          const bCanc = statusOf(b) === 'cancelado';
+          if (aCanc && !bCanc) return 1;
+          if (!aCanc && bCanc) return -1;
           // Iniciativas primero (más informativas), después por status
           if (a._benefit_id && !b._benefit_id) return -1;
           if (!a._benefit_id && b._benefit_id) return 1;
-          const order = { pendiente:0, programado:1, on_hold:2, finalizado:3 };
-          return (order[statusOf(a)]||9) - (order[statusOf(b)]||9);
+          const order = { pendiente:0, programado:1, on_hold:2, finalizado:3, cancelado:9 };
+          return (order[statusOf(a)]??99) - (order[statusOf(b)]??99);
         });
         const drawer = document.getElementById('detail-drawer');
         drawer.innerHTML = `

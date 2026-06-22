@@ -197,6 +197,12 @@
         transition: filter 0.12s;
       }
       .cal-event:hover { filter: brightness(0.96); }
+      @media print {
+        aside, #filter-wrapper, button, .btn, #sync-indicator, #role-toggle, #date-label, .nav-item, .modal-backdrop, .drawer, #backdrop, #bulk-selection-bar, #post-bulk-banner { display: none !important; }
+        body, main, #viewArea { background: white !important; }
+        .bar-fill { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .bg-white, .card-shadow { box-shadow: none !important; border: 1px solid #ddd !important; }
+      }
       .cal-event[draggable="true"] { cursor: grab; }
       .cal-event[draggable="true"]:active { cursor: grabbing; }
       .cal-event-selected {
@@ -547,6 +553,7 @@
         <a class="nav-item active" data-view="landing"><i data-lucide="home" class="icon"></i><span>Bienvenida</span></a>
         <a class="nav-item" data-view="calendar"><i data-lucide="calendar-range" class="icon"></i><span>Calendario</span></a>
         <a class="nav-item" data-view="initiatives"><i data-lucide="handshake" class="icon"></i><span>Iniciativas con agencias</span></a>
+        <a class="nav-item" data-view="requests"><i data-lucide="inbox" class="icon"></i><span>Requests</span><span id="requests-count-badge" class="ml-auto pill text-[10px]" style="background:#fef3c7;color:#92400e;display:none">0</span></a>
         <a class="nav-item nav-admin-only" data-view="ai"><i data-lucide="sparkles" class="icon"></i><span>Asistente AI</span><span class="ml-auto pill text-[10px]" style="background: var(--clear-blue); color: var(--nimbus-blue)">BETA</span></a>
         <a class="nav-item" data-view="insights"><i data-lucide="bar-chart-3" class="icon"></i><span>Insights</span></a>
         <a class="nav-item" data-view="library"><i data-lucide="library" class="icon"></i><span>Biblioteca</span></a>
@@ -712,6 +719,75 @@
       const AUDIENCES = ['Agencies', 'Merchants', 'Leads'];
       // Tipos de iniciativa (cross-cutting tag) — se usan tanto en iniciativas como en acciones del calendario
       const INITIATIVE_TYPE_TAGS = ['DEMAND GEN', 'EDUCATION', 'ENGAGEMENT', 'ADOPTION', 'POSITIONING', 'OTHER'];
+      // Lista de Partner Managers · editable vía localStorage si el equipo crece
+      const DEFAULT_PARTNER_MANAGERS = ['Daniela Pereyra', 'Candela Caamaño', 'Mauro Dri', 'Alejandra Saavedra G.'];
+      let PARTNER_MANAGERS = (() => {
+        try { const saved = JSON.parse(localStorage.getItem('pmh_partner_managers')); if (Array.isArray(saved) && saved.length) return saved; } catch(e) {}
+        return [...DEFAULT_PARTNER_MANAGERS];
+      })();
+      function savePartnerManagers() {
+        try { localStorage.setItem('pmh_partner_managers', JSON.stringify(PARTNER_MANAGERS)); } catch(e) {}
+      }
+
+      // ============== REQUESTS CONFIG ==============
+      // Status posibles de un request
+      const REQUEST_STATUSES = {
+        nuevo:       { label: '🆕 Nuevo',             color: '#0050c3' },
+        en_revision: { label: '👀 En revisión',       color: '#f59e0b' },
+        aprobado:    { label: '✅ Aprobado',          color: '#16a34a' },
+        rechazado:   { label: '❌ Rechazado',         color: '#b91c1c' },
+        convertido:  { label: '🚀 Convertido a iniciativa', color: '#9333ea' },
+        cancelado:   { label: '🚫 Cancelado',         color: '#6b7280' },
+      };
+      // Tiempos sugeridos de anticipación por tipo de iniciativa · editables · persistidos en localStorage
+      const DEFAULT_REQUEST_LEAD_TIMES = {
+        ugc_estandar:        '2 semanas',
+        ugc_estudio:         '3 semanas',
+        webinar_online:      '3 semanas',
+        caso_exito_agencia:  '3 semanas',
+        success_story_piezas:'3 semanas',
+        success_story_av:    '4 semanas',
+        pocket_event:        '4 semanas',
+        evento_oficina:      '6 semanas',
+      };
+      let REQUEST_LEAD_TIMES = (() => {
+        try { const saved = JSON.parse(localStorage.getItem('pmh_request_lead_times')); if (saved && typeof saved === 'object') return saved; } catch(e) {}
+        return { ...DEFAULT_REQUEST_LEAD_TIMES };
+      })();
+      function saveRequestLeadTimes() {
+        try { localStorage.setItem('pmh_request_lead_times', JSON.stringify(REQUEST_LEAD_TIMES)); } catch(e) {}
+      }
+      // Slack webhook URL (admin only · localStorage)
+      function getSlackWebhook() {
+        try { return localStorage.getItem('pmh_slack_webhook') || ''; } catch(e) { return ''; }
+      }
+      function setSlackWebhook(url) {
+        try { localStorage.setItem('pmh_slack_webhook', url || ''); } catch(e) {}
+      }
+      async function notifyNewRequestToSlack(req) {
+        const url = getSlackWebhook();
+        if (!url) { console.log('[slack] webhook no configurado, salteo notificación'); return false; }
+        const bt = BENEFIT_TYPES[req.tipo_beneficio_solicitado] || { label: req.tipo_beneficio_solicitado || 'Tipo' };
+        const hubUrl = window.location.origin;
+        const payload = {
+          text: `🆕 *Nuevo request de Partner Marketing*\n` +
+                `*Tipo:* ${bt.label}\n` +
+                `*Agencia:* ${req.agencia}\n` +
+                `*Solicita:* ${req.partner_manager_solicitante}${req.solicitante_alt?' / '+req.solicitante_alt:''}\n` +
+                `*Fecha objetivo:* ${req.fecha_objetivo || 'sin definir'}\n` +
+                `*Prioridad:* ${req.prioridad || '—'}\n\n` +
+                `*Descripción:*\n${req.descripcion || '(sin descripción)'}\n\n` +
+                `👉 Ver en el hub: ${hubUrl}/?req=${req.id}\n` +
+                `cc <@Cande> <@Dan>`,
+        };
+        try {
+          await fetch(url, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+          return true;
+        } catch(e) {
+          console.warn('[slack] error enviando webhook', e);
+          return false;
+        }
+      }
 
       // ============== INICIATIVAS CON AGENCIAS ==============
       // Tipos de iniciativa · editables desde admin via openInitiativeTypesEditor()
@@ -988,7 +1064,7 @@
       // (tipo_iniciativa, audiencia_segmentada, etc. — no son columnas dedicadas en Postgres)
       function packExtraFields(obj) {
         const metadata = { ...(obj.metadata || {}) };
-        const extras = ['tipo_iniciativa', 'audiencia_segmentada'];
+        const extras = ['tipo_iniciativa', 'audiencia_segmentada', 'partner_manager', 'etapa_previa'];
         for (const k of extras) {
           if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') metadata[k] = obj[k];
         }
@@ -1412,6 +1488,8 @@
         // Hydrate extras desde metadata
         if (b.metadata && typeof b.metadata === 'object' && !Array.isArray(b.metadata)) {
           if (!b.tipo_iniciativa && b.metadata.tipo_iniciativa) b.tipo_iniciativa = b.metadata.tipo_iniciativa;
+          if (!b.partner_manager && b.metadata.partner_manager) b.partner_manager = b.metadata.partner_manager;
+          if (!b.etapa_previa && b.metadata.etapa_previa) b.etapa_previa = b.metadata.etapa_previa;
         }
         if (b.fecha_objetivo && typeof b.fecha_objetivo === 'string') b.fecha_objetivo = b.fecha_objetivo.slice(0,10);
         if (b.fecha_publicado && typeof b.fecha_publicado === 'string') b.fecha_publicado = b.fecha_publicado.slice(0,10);
@@ -1788,6 +1866,8 @@
         const q = state.search.toLowerCase().trim();
         const source = state.view === 'calendar' ? getAllCalendarItems() : state.items;
         return source.filter(it => {
+          // Excluir requests del calendario y de los listados generales
+          if (it.tipo === 'request') return false;
           if (state.filters.tipo !== 'all' && it.tipo !== state.filters.tipo) return false;
           if (!categoriaMatchesFilter(it.categoria, state.filters.categoria)) return false;
           if (state.filters.status.size && !state.filters.status.has(statusOf(it))) return false;
@@ -1804,7 +1884,7 @@
       function renderFilters() {
         const wrapper = document.getElementById('filter-wrapper');
         // Hide filters entirely on Landing, Library, AI, Insights, Benefits/Initiatives views
-        if (['landing','library','ai','insights','benefits','initiatives'].includes(state.view)) { wrapper.style.display = 'none'; return; }
+        if (['landing','library','ai','insights','benefits','initiatives','requests'].includes(state.view)) { wrapper.style.display = 'none'; return; }
         wrapper.style.display = '';
 
         // Segmented Tipo
@@ -1996,6 +2076,7 @@
                 </div>
                 ${calModeToggleHTML()}
                 ${isAdmin() ? calSelectModeBtnHTML() : ''}
+                ${calExportBtnHTML()}
               </div>
             </div>
           `;
@@ -2108,6 +2189,140 @@
           ${modes.map(([k,l]) => `<button class="chip ${state.calMode===k?'chip-on':'chip-off'} border-none" onclick="setCalMode('${k}')">${l}</button>`).join('')}
         </div>`;
       }
+      function calExportBtnHTML() {
+        return `<button class="btn btn-secondary btn-sm" onclick="exportCalendarCSV()" title="Descargar todo el calendario filtrado actual a CSV (abre en Excel/Sheets)">${ic('download','w-3 h-3')} Exportar CSV</button>`;
+      }
+      // ============== EXPORTS (Calendar + Insights) ==============
+      function csvEscape(v) {
+        if (v === null || v === undefined) return '';
+        const s = String(v).replace(/"/g, '""');
+        if (/[",\n\r]/.test(s)) return `"${s}"`;
+        return s;
+      }
+      function downloadFile(content, filename, mime='text/csv;charset=utf-8') {
+        const blob = new Blob(['﻿' + content], { type: mime }); // BOM para Excel
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+      function exportCalendarCSV() {
+        // Exporta lo que está VISIBLE en calendario (state.items + virtuales de iniciativas, con filtros aplicados)
+        const items = filtered();
+        const header = ['Fecha','Día','Tipo','Categoría','Tag iniciativa','Título','Status','Cluster','Audiencia','Audiencia segmentada','Canales','Pilar','Owners','Owner TN','Owner agencia','Partner Manager','Agencia','Prioridad','Contenido','Copy','Comentarios','Links','Es iniciativa'];
+        const dayNames = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+        const rows = items.map(it => {
+          const benefit = it._benefit_id ? state.benefits.find(b => b.id === it._benefit_id) : null;
+          const linksStr = (it.links||[]).map(l => `${l.label || ''}: ${l.url || ''}`).join(' | ');
+          const fecha = it.fecha || '';
+          const dia = fecha ? dayNames[new Date(fecha+'T12:00:00').getDay()] : '';
+          return [
+            fecha, dia, it.tipo || '', it.categoria || '',
+            it.tipo_iniciativa || '', it.titulo || '',
+            statusOf(it), it.cluster || '',
+            (it.audiencia||[]).join('; '),
+            it.audiencia_segmentada || '',
+            (it.canales||[]).join('; '),
+            it.pilar || '',
+            (it.owners||[]).join('; '),
+            benefit ? (benefit.owner_tn||'') : '',
+            benefit ? (benefit.owner_agencia||'') : '',
+            benefit ? (benefit.partner_manager||'') : '',
+            benefit ? (benefit.agencia||'') : (it.agencia || ''),
+            it.prioridad || '',
+            it.contenido || '',
+            it.copy || '',
+            it.comentarios || '',
+            linksStr,
+            it._benefit_id ? 'Sí' : 'No',
+          ].map(csvEscape).join(',');
+        });
+        const csv = [header.map(csvEscape).join(','), ...rows].join('\n');
+        const dateStamp = new Date().toISOString().slice(0,10);
+        downloadFile(csv, `partner-mkt-hub-calendario-${dateStamp}.csv`);
+        toast(`💾 Exporté ${items.length} items a CSV`);
+      }
+      function exportInsightsCSV() {
+        const scope = state._insightsScope || 'this-q';
+        const allItems = [...state.items, ...((state.benefits||[]).map(b => { try { return benefitToVirtualItem(b); } catch(e) { return null; } }).filter(Boolean))];
+        const year = today.getFullYear();
+        const m = today.getMonth();
+        let from, to, scopeLabel;
+        if (scope === 'this-month') { from = `${year}-${String(m+1).padStart(2,'0')}-01`; to = `${year}-${String(m+1).padStart(2,'0')}-31`; scopeLabel = `${year}-${String(m+1).padStart(2,'0')}`; }
+        else if (scope === 'this-q' || /^q[1-4]$/.test(scope)) {
+          const q = scope === 'this-q' ? Math.floor(m/3) : (parseInt(scope.slice(1)) - 1);
+          from = `${year}-${String(q*3+1).padStart(2,'0')}-01`;
+          to = `${year}-${String(q*3+3).padStart(2,'0')}-31`;
+          scopeLabel = `Q${q+1}_${year}`;
+        } else { from = `${year}-01-01`; to = `${year}-12-31`; scopeLabel = `${year}`; }
+        const inScope = allItems.filter(it => it.fecha && it.fecha >= from && it.fecha <= to);
+
+        // CSV multi-sección: usamos blank rows como separadores
+        const sections = [];
+
+        // Sección 1: resumen
+        sections.push(['# RESUMEN', '', '']);
+        sections.push(['Periodo', scopeLabel, '']);
+        sections.push(['Total items en periodo', inScope.length, '']);
+        sections.push(['Iniciativas (no canceladas)', inScope.filter(it => it._benefit_id).length, '']);
+        sections.push(['Acciones', inScope.filter(it => it.tipo === 'accion' && !it._benefit_id).length, '']);
+        sections.push(['Comunicaciones', inScope.filter(it => it.tipo === 'comunicacion').length, '']);
+        sections.push(['', '', '']);
+
+        // Sección 2: por categoría
+        sections.push(['# POR CATEGORÍA', 'Cantidad', '']);
+        const catCounts = {};
+        inScope.forEach(it => { catCounts[it.categoria] = (catCounts[it.categoria]||0)+1; });
+        Object.entries(catCounts).sort((a,b)=>b[1]-a[1]).forEach(([k,v]) => {
+          sections.push([CATEGORIES[k]?.label || k, v, '']);
+        });
+        sections.push(['', '', '']);
+
+        // Sección 3: por tipo de iniciativa (tag)
+        sections.push(['# POR TAG TIPO INICIATIVA', 'Cantidad', '']);
+        const tagCounts = {};
+        inScope.forEach(it => { if (it.tipo_iniciativa) tagCounts[it.tipo_iniciativa] = (tagCounts[it.tipo_iniciativa]||0)+1; });
+        Object.entries(tagCounts).sort((a,b)=>b[1]-a[1]).forEach(([k,v]) => sections.push([k, v, '']));
+        sections.push(['', '', '']);
+
+        // Sección 4: comms por pilar
+        sections.push(['# COMUNICACIONES POR PILAR', 'Cantidad', '']);
+        const pilarCounts = {};
+        inScope.filter(it => it.tipo === 'comunicacion' && it.pilar && it.pilar.includes('|')).forEach(it => {
+          pilarCounts[it.pilar] = (pilarCounts[it.pilar]||0)+1;
+        });
+        Object.entries(pilarCounts).sort((a,b)=>b[1]-a[1]).forEach(([k,v]) => sections.push([k, v, '']));
+        sections.push(['', '', '']);
+
+        // Sección 5: iniciativas por agencia
+        sections.push(['# INICIATIVAS POR AGENCIA', 'Cantidad', '']);
+        const benefitsInScope = (state.benefits||[]).filter(b => b.etapa !== 'cancelado' && (b.fecha_publicado||b.fecha_objetivo) >= from && (b.fecha_publicado||b.fecha_objetivo) <= to);
+        const byAgency = {};
+        benefitsInScope.forEach(b => { const a = (b.agencia||'?').trim(); byAgency[a] = (byAgency[a]||0)+1; });
+        Object.entries(byAgency).sort((a,b)=>b[1]-a[1]).forEach(([k,v]) => sections.push([k, v, '']));
+        sections.push(['', '', '']);
+
+        // Sección 6: iniciativas por partner manager
+        sections.push(['# INICIATIVAS POR PARTNER MANAGER', 'Cantidad', '%']);
+        const byPM = {};
+        benefitsInScope.forEach(b => { const pm = (b.partner_manager||'(sin asignar)').trim(); byPM[pm] = (byPM[pm]||0)+1; });
+        const totalPM = benefitsInScope.length;
+        Object.entries(byPM).sort((a,b)=>b[1]-a[1]).forEach(([k,v]) => sections.push([k, v, totalPM ? Math.round(v/totalPM*100)+'%' : '0%']));
+
+        const csv = sections.map(row => row.map(csvEscape).join(',')).join('\n');
+        downloadFile(csv, `partner-mkt-hub-insights-${scopeLabel}.csv`);
+        toast(`📊 Exporté insights del periodo ${scopeLabel}`);
+      }
+      function exportInsightsPDF() {
+        // Usa window.print() con la vista actual (Insights ya filtrado). El usuario elige "Guardar como PDF"
+        // CSS @media print arregla los colores/layout.
+        toast('🖨️ Abriendo diálogo de impresión · seleccioná "Guardar como PDF" en destino');
+        setTimeout(() => window.print(), 400);
+      }
+      window.exportCalendarCSV = exportCalendarCSV;
+      window.exportInsightsCSV = exportInsightsCSV;
+      window.exportInsightsPDF = exportInsightsPDF;
       function calSelectModeBtnHTML() {
         const active = state.selectMode;
         return `<button class="btn ${active?'btn-primary':'btn-secondary'} btn-sm" onclick="toggleSelectMode()" title="Activar selección múltiple para borrar/exportar comms en bloque">
@@ -2911,6 +3126,448 @@
         return `<div>${sinFechaHTML}${rowsHTML || `<div class="text-center text-[var(--mid-grey)] py-20">Sin resultados con estos filtros.</div>`}</div>`;
       }
 
+      // Sección específica de Iniciativas (separada del resto) · por agencia + por Partner Manager
+      function renderInitiativesInsightsSection(scope, scopeLabel, from, to) {
+        const benefitsInScope = (state.benefits||[]).filter(b => {
+          if (b.etapa === 'cancelado') return false; // canceladas no cuentan en métricas
+          const d = b.fecha_publicado || b.fecha_objetivo;
+          return d && d >= from && d <= to;
+        });
+        const pmFilter = state._insightsPMFilter || 'all';
+        const filteredByPM = pmFilter === 'all' ? benefitsInScope : benefitsInScope.filter(b => (b.partner_manager||'') === pmFilter);
+
+        // Por agencia
+        const byAgency = {};
+        filteredByPM.forEach(b => {
+          const a = (b.agencia || '?').trim();
+          byAgency[a] = (byAgency[a]||0) + 1;
+        });
+        const maxAgency = Math.max(1, ...Object.values(byAgency));
+        const agencyRows = Object.entries(byAgency).sort((a,b) => b[1]-a[1]).map(([k,v]) => `<div class="mb-2">
+          <div class="flex items-center justify-between text-xs mb-1"><span class="font-semibold">${escapeHtml(k)}</span><span class="font-bold h-heading">${v}</span></div>
+          <div class="bar"><div class="bar-fill" style="width:${(v/maxAgency)*100}%; background:#be185d;"></div></div>
+        </div>`).join('');
+
+        // Por Partner Manager (no filtrado por pmFilter — siempre muestra todos)
+        const byPM = {};
+        let sinPM = 0;
+        benefitsInScope.forEach(b => {
+          const pm = (b.partner_manager || '').trim();
+          if (pm) byPM[pm] = (byPM[pm]||0) + 1;
+          else sinPM++;
+        });
+        const maxPM = Math.max(1, ...Object.values(byPM));
+        const pmRows = Object.entries(byPM).sort((a,b) => b[1]-a[1]).map(([k,v]) => {
+          const pct = Math.round((v / Math.max(1, benefitsInScope.length - sinPM)) * 100);
+          return `<div class="mb-2">
+            <div class="flex items-center justify-between text-xs mb-1"><span class="font-semibold">${escapeHtml(k)}</span><span class="font-bold h-heading">${v} <span class="text-[10px] text-[var(--mid-grey)] font-normal">${pct}%</span></span></div>
+            <div class="bar"><div class="bar-fill" style="width:${(v/maxPM)*100}%; background:#0050c3;"></div></div>
+          </div>`;
+        }).join('');
+
+        // Lista de PMs activos para el filtro
+        const allPMs = [...new Set((state.benefits||[]).map(b => (b.partner_manager||'').trim()).filter(Boolean))].sort();
+
+        return `
+          <div class="bg-white rounded-2xl card-shadow p-6 mb-6 border-2 border-[#fce7f3]">
+            <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+              <div>
+                <h3 class="text-lg font-bold h-heading flex items-center gap-2">${ic('handshake','w-5 h-5 text-[#be185d]')} Iniciativas con agencias · análisis</h3>
+                <p class="text-xs text-[var(--mid-grey)] mt-1">Solo iniciativas (no canceladas) · ${scopeLabel} · ${benefitsInScope.length} en total · ${filteredByPM.length} con filtro PM</p>
+              </div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <label class="text-xs text-[var(--mid-grey)]">Filtrar Partner Manager:</label>
+                <select class="select" style="width:auto;padding:6px 10px;font-size:12px" onchange="state._insightsPMFilter=this.value; renderAll();">
+                  <option value="all" ${pmFilter==='all'?'selected':''}>Todos los PMs</option>
+                  ${allPMs.map(pm => `<option value="${escapeHtml(pm)}" ${pmFilter===pm?'selected':''}>${escapeHtml(pm)}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <h4 class="text-sm font-bold h-heading mb-3 flex items-center gap-2">${ic('building','w-4 h-4')} Por agencia ${pmFilter!=='all'?`<span class="text-[10px] text-[var(--mid-grey)] font-normal">(filtrado · ${escapeHtml(pmFilter)})</span>`:''}</h4>
+                ${agencyRows || `<p class="text-xs text-[var(--mid-grey)]">No hay iniciativas en este periodo${pmFilter!=='all'?' para este PM':''}.</p>`}
+              </div>
+              <div>
+                <h4 class="text-sm font-bold h-heading mb-3 flex items-center gap-2">${ic('users','w-4 h-4')} Por Partner Manager</h4>
+                ${pmRows || `<p class="text-xs text-[var(--mid-grey)]">No hay iniciativas con PM asignado en este periodo.</p>`}
+                ${sinPM > 0 ? `<p class="text-[10px] text-[var(--mid-grey)] mt-3 italic">⚠️ ${sinPM} iniciativa${sinPM===1?'':'s'} sin Partner Manager asignado. Editá desde la tab Iniciativas.</p>` : ''}
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      // ============== REQUESTS VIEW ==============
+      function renderRequests() {
+        const allRequests = state.items.filter(it => it.tipo === 'request');
+        const statusFilter = state._reqStatusFilter || 'pending';
+        const pmFilter = state._reqPMFilter || 'all';
+        const tipoFilter = state._reqTipoFilter || 'all';
+
+        let filtered = allRequests;
+        if (statusFilter === 'pending') {
+          filtered = filtered.filter(r => ['nuevo','en_revision'].includes(r.req_status||'nuevo'));
+        } else if (statusFilter !== 'all') {
+          filtered = filtered.filter(r => (r.req_status||'nuevo') === statusFilter);
+        }
+        if (pmFilter !== 'all') filtered = filtered.filter(r => (r.partner_manager_solicitante||'') === pmFilter);
+        if (tipoFilter !== 'all') filtered = filtered.filter(r => (r.tipo_beneficio_solicitado||'') === tipoFilter);
+
+        filtered = filtered.sort((a,b) => (b.created_at||'').localeCompare(a.created_at||''));
+
+        const counts = {
+          nuevo: allRequests.filter(r => (r.req_status||'nuevo') === 'nuevo').length,
+          en_revision: allRequests.filter(r => r.req_status === 'en_revision').length,
+          aprobado: allRequests.filter(r => r.req_status === 'aprobado').length,
+          convertido: allRequests.filter(r => r.req_status === 'convertido').length,
+        };
+        const showHelpBanner = !state._reqHelpDismissed;
+        const slackConfigured = !!getSlackWebhook();
+
+        // Filtros PM list
+        const allPMs = [...new Set(allRequests.map(r => r.partner_manager_solicitante).filter(Boolean))].sort();
+
+        return `
+          <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+            <div>
+              <h2 class="text-2xl font-extrabold h-heading">Requests de iniciativas</h2>
+              <p class="text-xs text-[var(--mid-grey)]">Pedí a Partner Marketing una iniciativa nueva (caso de éxito, UGC, sponsoreo, etc.) y trackeá su status acá.</p>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              ${isAdmin() ? `<button class="btn btn-secondary btn-sm" onclick="openRequestSettings()" title="Editar tiempos sugeridos + Slack webhook">${ic('settings','w-3 h-3')} Config</button>` : ''}
+              <button class="btn btn-primary btn-sm" onclick="openNewRequestDrawer()">${ic('plus','w-3 h-3')} Nuevo request</button>
+            </div>
+          </div>
+
+          ${showHelpBanner ? `
+          <details class="bg-[#f0f9ff] border border-[#bae6fd] rounded-2xl p-4 mb-4" open>
+            <summary class="font-bold h-heading text-sm cursor-pointer flex items-center justify-between">
+              <span>${ic('info','w-4 h-4 inline text-[#0050c3]')} Cómo pedir una iniciativa · proceso</span>
+              <button class="btn btn-ghost btn-xs" onclick="event.preventDefault(); state._reqHelpDismissed=true; renderAll();" title="Ocultar">${ic('x','w-3 h-3')}</button>
+            </summary>
+            <div class="mt-3 text-xs text-[var(--text-dark)] space-y-2">
+              <p><strong>1.</strong> Click en "Nuevo request" arriba a la derecha y completá los datos: agencia, tipo, descripción, fecha objetivo.</p>
+              <p><strong>2.</strong> Tu pedido entra como <span class="pill" style="background:#dbeafe;color:#0050c3;padding:2px 8px">🆕 Nuevo</span>. El equipo de Partner Marketing lo revisa y avanza el status (En revisión → Aprobado o Rechazado).</p>
+              <p><strong>3.</strong> ${slackConfigured ? `✅ <strong>Notificación a Slack:</strong> al crear el request, automáticamente avisamos a <strong>@Cande</strong> y <strong>@Dan</strong>.` : `⚠️ <strong>Notificá en Slack:</strong> después de sumar el request, avisá a <strong>@Cande Caamaño</strong> y <strong>@Dan Pereyra</strong> por DM o canal del equipo. Sin notificación puede no priorizarse a tiempo.`}</p>
+              <p><strong>4.</strong> Si lo aprobamos, el request se convierte en una iniciativa real (queda en la tab "Iniciativas con agencias").</p>
+              <div class="mt-3 p-3 rounded-xl bg-white border border-[#bae6fd]">
+                <p class="text-[11px] font-bold uppercase tracking-wider text-[var(--mid-grey)] mb-2">⏰ Tiempos sugeridos de anticipación por tipo:</p>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+                  ${Object.entries(BENEFIT_TYPES).map(([k,v]) => `<div class="flex items-center gap-1"><span class="opacity-60">${ic(v.icon,'w-3 h-3 inline')}</span> <strong>${v.label}:</strong> ${REQUEST_LEAD_TIMES[k] || 'sin definir'}</div>`).join('')}
+                </div>
+              </div>
+            </div>
+          </details>
+          ` : `<button class="btn btn-ghost btn-xs mb-4" onclick="state._reqHelpDismissed=false; renderAll();">${ic('help-circle','w-3 h-3')} Ver instrucciones</button>`}
+
+          <!-- KPIs -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+            <div class="bg-white rounded-xl border border-[#e4e4e7] p-3"><div class="text-[10px] uppercase tracking-wider text-[var(--mid-grey)] font-semibold">🆕 Nuevos</div><div class="text-2xl font-extrabold h-heading">${counts.nuevo}</div></div>
+            <div class="bg-white rounded-xl border border-[#e4e4e7] p-3"><div class="text-[10px] uppercase tracking-wider text-[var(--mid-grey)] font-semibold">👀 En revisión</div><div class="text-2xl font-extrabold h-heading">${counts.en_revision}</div></div>
+            <div class="bg-white rounded-xl border border-[#e4e4e7] p-3"><div class="text-[10px] uppercase tracking-wider text-[var(--mid-grey)] font-semibold">✅ Aprobados</div><div class="text-2xl font-extrabold h-heading">${counts.aprobado}</div></div>
+            <div class="bg-white rounded-xl border border-[#e4e4e7] p-3"><div class="text-[10px] uppercase tracking-wider text-[var(--mid-grey)] font-semibold">🚀 Convertidos</div><div class="text-2xl font-extrabold h-heading">${counts.convertido}</div></div>
+          </div>
+
+          <!-- Filtros -->
+          <div class="bg-white rounded-2xl border border-[#e4e4e7] p-3 mb-3 flex items-center gap-2 flex-wrap">
+            <span class="text-[10px] uppercase tracking-wider font-bold text-[var(--mid-grey)]">Status:</span>
+            <button class="btn ${statusFilter==='pending'?'btn-primary':'btn-secondary'} btn-xs" onclick="state._reqStatusFilter='pending'; renderAll();">Pendientes</button>
+            <button class="btn ${statusFilter==='all'?'btn-primary':'btn-secondary'} btn-xs" onclick="state._reqStatusFilter='all'; renderAll();">Todos</button>
+            ${Object.entries(REQUEST_STATUSES).map(([k,v]) => `<button class="btn ${statusFilter===k?'btn-primary':'btn-secondary'} btn-xs" onclick="state._reqStatusFilter='${k}'; renderAll();">${v.label}</button>`).join('')}
+            ${allPMs.length ? `<select class="select" style="width:auto;padding:6px 10px;font-size:12px;margin-left:auto" onchange="state._reqPMFilter=this.value; renderAll();">
+              <option value="all" ${pmFilter==='all'?'selected':''}>Todos los PMs</option>
+              ${allPMs.map(p => `<option value="${escapeHtml(p)}" ${pmFilter===p?'selected':''}>${escapeHtml(p)}</option>`).join('')}
+            </select>` : ''}
+            <select class="select" style="width:auto;padding:6px 10px;font-size:12px" onchange="state._reqTipoFilter=this.value; renderAll();">
+              <option value="all" ${tipoFilter==='all'?'selected':''}>Todos los tipos</option>
+              ${Object.entries(BENEFIT_TYPES).map(([k,v]) => `<option value="${k}" ${tipoFilter===k?'selected':''}>${v.label}</option>`).join('')}
+            </select>
+          </div>
+
+          <!-- Lista de requests -->
+          ${filtered.length === 0 ? `
+            <div class="bg-white rounded-2xl border border-[#e4e4e7] p-10 text-center">
+              <div class="text-3xl mb-2">📭</div>
+              <p class="text-sm text-[var(--mid-grey)] mb-3">${allRequests.length===0 ? 'No hay requests todavía. Creá el primero!' : 'No hay requests con los filtros aplicados.'}</p>
+              <button class="btn btn-primary btn-sm" onclick="openNewRequestDrawer()">${ic('plus','w-3 h-3')} Nuevo request</button>
+            </div>
+          ` : `
+            <div class="space-y-3">
+              ${filtered.map(r => renderRequestCard(r)).join('')}
+            </div>
+          `}
+        `;
+      }
+      function renderRequestCard(r) {
+        const bt = BENEFIT_TYPES[r.tipo_beneficio_solicitado] || { label: r.tipo_beneficio_solicitado || 'Tipo', icon: 'circle', color: '#9ca3af' };
+        const status = r.req_status || 'nuevo';
+        const st = REQUEST_STATUSES[status] || REQUEST_STATUSES.nuevo;
+        const created = r.created_at ? new Date(r.created_at).toLocaleDateString('es-AR',{day:'2-digit',month:'short'}) : '—';
+        const fechaObj = r.fecha_objetivo ? fmtDate(r.fecha_objetivo) : 'sin definir';
+        const isConverted = status === 'convertido';
+        const linkedBenefit = isConverted && r.linked_benefit_id ? state.benefits.find(b => b.id === r.linked_benefit_id) : null;
+        return `
+          <div class="bg-white rounded-2xl border border-[#e4e4e7] p-5 ${status==='cancelado'||status==='rechazado'?'opacity-60':''}">
+            <div class="flex items-start gap-3 mb-3">
+              <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style="background:${bt.color}15;color:${bt.color}">${ic(bt.icon,'w-5 h-5')}</div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap mb-1">
+                  <span class="pill" style="background:${st.color}15;color:${st.color}">${st.label}</span>
+                  <span class="text-xs text-[var(--mid-grey)]">Creado ${created}</span>
+                </div>
+                <h3 class="font-bold h-heading text-base">${escapeHtml(r.agencia || 'Sin agencia')} <span class="text-sm font-normal text-[var(--mid-grey)]">· ${bt.label}</span></h3>
+                <p class="text-xs text-[var(--mid-grey)] mt-0.5">
+                  Solicita: <strong>${escapeHtml(r.partner_manager_solicitante || '?')}</strong>${r.solicitante_alt?` / ${escapeHtml(r.solicitante_alt)}`:''}
+                  · Fecha objetivo: <strong>${fechaObj}</strong>
+                  ${r.prioridad?` · <span class="pill priority-${r.prioridad}">${r.prioridad}</span>`:''}
+                </p>
+              </div>
+              ${isAdmin() ? `<div class="flex items-center gap-1 shrink-0">
+                <select class="select" style="width:auto;padding:4px 8px;font-size:11px" onchange="updateRequestStatus('${r.id}', this.value)" title="Cambiar status">
+                  ${Object.entries(REQUEST_STATUSES).map(([k,v]) => `<option value="${k}" ${status===k?'selected':''}>${v.label}</option>`).join('')}
+                </select>
+                <button class="btn btn-ghost btn-xs" onclick="openRequestEditDrawer('${r.id}')" title="Editar request">${ic('pencil','w-3 h-3')}</button>
+                <button class="btn btn-ghost btn-xs" onclick="deleteRequest('${r.id}')" title="Eliminar request">${ic('trash-2','w-3 h-3')}</button>
+              </div>` : ''}
+            </div>
+            ${r.descripcion ? `<p class="text-sm text-[var(--text-dark)] mb-3">${escapeHtml(r.descripcion)}</p>` : ''}
+            ${(r.links||[]).length ? `<div class="flex flex-wrap gap-2 mb-3">
+              ${r.links.filter(l => l && l.url).map(l => `<a href="${escapeHtml(l.url)}" target="_blank" rel="noopener" class="pill text-[11px]" style="background:#f0f9ff;color:#0050c3;text-decoration:none">${ic('link','w-3 h-3 inline')} ${escapeHtml(l.label || 'Link')}</a>`).join('')}
+            </div>` : ''}
+            ${r.notas ? `<div class="text-[11px] text-[var(--mid-grey)] italic">📝 ${escapeHtml(r.notas)}</div>` : ''}
+            ${linkedBenefit ? `<div class="mt-3 p-2 rounded-lg bg-[#f3e8ff] border border-[#d8b4fe] text-xs flex items-center justify-between gap-2">
+              <span>🚀 Convertido en iniciativa · <strong>${escapeHtml(linkedBenefit.agencia)}</strong></span>
+              <button class="btn btn-ghost btn-xs" onclick="openBenefitDetail('${linkedBenefit.id}')">${ic('external-link','w-3 h-3')} Ver iniciativa</button>
+            </div>` : ''}
+            ${isAdmin() && !isConverted && status !== 'cancelado' && status !== 'rechazado' ? `<div class="mt-3 pt-3 border-t border-[var(--lightest-grey)] flex justify-end">
+              <button class="btn btn-primary btn-xs" onclick="convertRequestToInitiative('${r.id}')">${ic('arrow-right','w-3 h-3')} Convertir a iniciativa</button>
+            </div>` : ''}
+          </div>
+        `;
+      }
+      function openNewRequestDrawer(editId) {
+        const editing = !!editId;
+        const r = editing ? (state.items.find(x => x.id === editId) || {}) : {};
+        const drawer = document.getElementById('new-drawer');
+        drawer.innerHTML = `
+          <div class="px-6 py-4 border-b border-[var(--lightest-grey)] flex items-start justify-between gap-3">
+            <div>
+              <div class="flex items-center gap-2 mb-1"><div class="w-7 h-7 rounded-full ai-glow flex items-center justify-center">${ic(editing?'pencil':'inbox','w-3 h-3 text-white')}</div><span class="text-xs font-bold h-heading uppercase">${editing?'Editar request':'Nuevo request'}</span></div>
+              <h2 class="text-xl font-extrabold h-heading">${editing?'Editar pedido':'Pedile algo a Partner Marketing'}</h2>
+              <p class="text-xs text-[var(--mid-grey)] mt-1">Completá los datos · te avisamos cuando lo procesemos.</p>
+            </div>
+            <button class="btn btn-ghost" onclick="closeAllDrawers()">${ic('x','w-5 h-5')}</button>
+          </div>
+          <form id="req-form" class="px-6 py-5 overflow-y-auto scroll-v flex-1" onsubmit="saveRequest(event, '${editId||''}')">
+            <div class="grid grid-cols-2 gap-3 mb-4">
+              <div><span class="label">Tipo de iniciativa solicitada *</span>
+                <select name="tipo_beneficio_solicitado" class="select" required>
+                  ${Object.entries(BENEFIT_TYPES).map(([k,v]) => `<option value="${k}" ${r.tipo_beneficio_solicitado===k?'selected':''}>${v.label}</option>`).join('')}
+                </select>
+                <p class="text-[10px] text-[var(--mid-grey)] mt-1" id="lead-time-hint">${r.tipo_beneficio_solicitado && REQUEST_LEAD_TIMES[r.tipo_beneficio_solicitado] ? `⏰ Anticipación sugerida: ${REQUEST_LEAD_TIMES[r.tipo_beneficio_solicitado]}` : ''}</p>
+              </div>
+              <div><span class="label">Agencia *</span><input type="text" name="agencia" class="input" value="${escapeHtml(r.agencia||'')}" placeholder="Ej: Innovate Group" required /></div>
+              <div><span class="label">Partner Manager solicitante *</span>
+                <input list="pm-suggestions-req" type="text" name="partner_manager_solicitante" class="input" value="${escapeHtml(r.partner_manager_solicitante||'')}" placeholder="Quien hace el pedido" required />
+                <datalist id="pm-suggestions-req">${PARTNER_MANAGERS.map(p => `<option value="${escapeHtml(p)}">`).join('')}</datalist>
+              </div>
+              <div><span class="label">¿Es otra persona?</span><input type="text" name="solicitante_alt" class="input" value="${escapeHtml(r.solicitante_alt||'')}" placeholder="Opcional · si el pedido viene de alguien más" /></div>
+              <div><span class="label">Fecha objetivo</span><input type="date" name="fecha_objetivo" class="input" value="${r.fecha_objetivo||''}" /></div>
+              <div><span class="label">Prioridad sugerida</span>
+                <select name="prioridad" class="select"><option value="">—</option>${['P1','P2','P3'].map(p => `<option ${r.prioridad===p?'selected':''}>${p}</option>`).join('')}</select>
+              </div>
+            </div>
+            <div class="mb-4"><span class="label">Descripción / Brief *</span><textarea name="descripcion" class="textarea" rows="4" placeholder="¿De qué se trata el pedido? Contexto, objetivo, qué necesitás..." required>${escapeHtml(r.descripcion||'')}</textarea></div>
+            <div class="mb-4"><span class="label">Notas adicionales</span><textarea name="notas" class="textarea" rows="2" placeholder="Cualquier dato extra que ayude (links a Slack, comentarios internos, etc)">${escapeHtml(r.notas||'')}</textarea></div>
+            <div class="mb-4">
+              <div class="flex items-center justify-between mb-2">
+                <span class="label">Links de referencia</span>
+                <button type="button" class="btn btn-ghost btn-xs" onclick="addItemLinkRow()">${ic('plus','w-3 h-3')} Sumar link</button>
+              </div>
+              <div id="item-links-list" class="space-y-2">
+                ${(r.links||[]).filter(l => l && l.url).map(l => itemLinkRowHTML(l.label, l.url)).join('')}
+              </div>
+              <p class="text-[10px] text-[var(--mid-grey)] mt-1">Sumá links a context (briefs previos, calls, deck, lo que sirva)</p>
+            </div>
+          </form>
+          <div class="px-6 py-3 border-t border-[var(--lightest-grey)] bg-white flex items-center justify-between">
+            <button type="button" class="btn btn-ghost btn-xs" onclick="closeAllDrawers()">Cancelar</button>
+            <button form="req-form" type="submit" class="btn btn-primary btn-xs">${ic('check','w-3 h-3')} ${editing?'Guardar cambios':'Sumar request'}</button>
+          </div>
+        `;
+        document.getElementById('backdrop').classList.add('open');
+        drawer.classList.add('open');
+        if (window.lucide) lucide.createIcons();
+        // Lead-time hint dinámico
+        const sel = drawer.querySelector('select[name="tipo_beneficio_solicitado"]');
+        const hint = drawer.querySelector('#lead-time-hint');
+        if (sel && hint) {
+          sel.onchange = () => {
+            const lt = REQUEST_LEAD_TIMES[sel.value];
+            hint.textContent = lt ? `⏰ Anticipación sugerida: ${lt}` : '';
+          };
+        }
+      }
+      function openRequestEditDrawer(id) { openNewRequestDrawer(id); }
+      function saveRequest(e, editId) {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const links = readItemLinksFromForm();
+        const data = {
+          tipo: 'request', // marca crítica para excluir del calendario
+          tipo_beneficio_solicitado: fd.get('tipo_beneficio_solicitado'),
+          agencia: fd.get('agencia'),
+          partner_manager_solicitante: fd.get('partner_manager_solicitante'),
+          solicitante_alt: fd.get('solicitante_alt') || '',
+          fecha_objetivo: fd.get('fecha_objetivo') || null,
+          prioridad: fd.get('prioridad') || '',
+          descripcion: fd.get('descripcion') || '',
+          notas: fd.get('notas') || '',
+          links,
+          // Campos requeridos por el schema items (placeholders)
+          titulo: `[REQUEST] ${fd.get('agencia')} · ${(BENEFIT_TYPES[fd.get('tipo_beneficio_solicitado')]||{}).label || fd.get('tipo_beneficio_solicitado')}`,
+          categoria: 'other',
+          fecha: fd.get('fecha_objetivo') || null,
+        };
+        if (editId) {
+          const r = state.items.find(x => x.id === editId);
+          if (r) {
+            Object.assign(r, data);
+            // Preservar req_status, created_at, linked_benefit_id
+          }
+          api_saveItem(r);
+          toast('✏️ Request actualizado');
+        } else {
+          data.id = 'req-' + slug();
+          data.req_status = 'nuevo';
+          data.created_at = new Date().toISOString();
+          state.items.push(data);
+          api_saveItem(data);
+          toast(`📥 Request creado · ${data.agencia}`);
+          // Notificar a Slack si hay webhook configurado
+          notifyNewRequestToSlack(data).then(ok => {
+            if (ok) toast('💬 Slack notificado a Cande y Dan');
+          });
+        }
+        closeAllDrawers();
+        renderAll();
+      }
+      function updateRequestStatus(id, status) {
+        const r = state.items.find(x => x.id === id);
+        if (!r) return;
+        r.req_status = status;
+        api_saveItem(r);
+        renderAll();
+        toast(`🔄 Status: ${(REQUEST_STATUSES[status]||{label:status}).label}`);
+      }
+      function deleteRequest(id) {
+        if (!confirm('¿Eliminar este request? No se puede deshacer.')) return;
+        const idx = state.items.findIndex(x => x.id === id);
+        if (idx < 0) return;
+        const r = state.items[idx];
+        state.items.splice(idx, 1);
+        if (typeof api_deleteItem === 'function') api_deleteItem(id);
+        renderAll();
+        toast(`🗑️ Request eliminado`);
+      }
+      function convertRequestToInitiative(reqId) {
+        const r = state.items.find(x => x.id === reqId);
+        if (!r) return;
+        if (!confirm(`¿Convertir este request en iniciativa real?\n\nVa a abrir el form de Nueva iniciativa pre-llenado con los datos del request. Después de guardar, el request queda marcado como "Convertido" y enlazado a la iniciativa.`)) return;
+        // Pre-rellenar campos para el form de iniciativa via state temporal
+        state._convertingFromRequest = {
+          reqId,
+          prefill: {
+            tipo_beneficio: r.tipo_beneficio_solicitado,
+            agencia: r.agencia,
+            fecha_objetivo: r.fecha_objetivo,
+            prioridad: r.prioridad,
+            notas: r.descripcion + (r.notas ? '\n\n' + r.notas : ''),
+            headline: '',
+            etapa: 'briefeado',
+          }
+        };
+        openNewBenefitDrawer();
+        // El saveBenefit existente recogerá _convertingFromRequest y enlazará el request
+      }
+      window.openNewRequestDrawer = openNewRequestDrawer;
+      window.openRequestEditDrawer = openRequestEditDrawer;
+      window.saveRequest = saveRequest;
+      window.updateRequestStatus = updateRequestStatus;
+      window.deleteRequest = deleteRequest;
+      window.convertRequestToInitiative = convertRequestToInitiative;
+
+      // Editor de config de requests (tiempos sugeridos + Slack webhook)
+      function openRequestSettings() {
+        if (!isAdmin()) return;
+        const modal = document.getElementById('lib-modal');
+        const rowsHTML = Object.entries(BENEFIT_TYPES).map(([k,v]) => `
+          <div class="flex items-center gap-3 py-2 border-b border-[var(--lightest-grey)]" data-leadtime-key="${k}">
+            <div class="w-7 h-7 rounded flex items-center justify-center shrink-0" style="background:${v.color}15;color:${v.color}">${ic(v.icon,'w-4 h-4')}</div>
+            <div class="flex-1 min-w-0 text-sm font-semibold">${escapeHtml(v.label)}</div>
+            <input type="text" class="input" style="width:180px" data-leadtime-value placeholder="Ej: 3 semanas" value="${escapeHtml(REQUEST_LEAD_TIMES[k]||'')}" />
+          </div>
+        `).join('');
+        modal.innerHTML = `
+          <div class="modal-card" style="max-width:780px">
+            <div class="p-6 border-b border-[var(--lightest-grey)] flex items-center justify-between">
+              <div>
+                <h3 class="text-xl font-extrabold h-heading">Config de Requests</h3>
+                <p class="text-xs text-[var(--mid-grey)] mt-1">Tiempos sugeridos de anticipación + integración con Slack</p>
+              </div>
+              <button class="btn btn-ghost" onclick="closeLibModal()">${ic('x','w-5 h-5')}</button>
+            </div>
+            <div class="p-6 max-h-[70vh] overflow-y-auto scroll-v">
+              <h4 class="font-bold h-heading text-sm mb-3">⏰ Tiempos sugeridos por tipo</h4>
+              <p class="text-xs text-[var(--mid-grey)] mb-3">Aparecen como hint cuando alguien crea un request. Editá como prefieras.</p>
+              ${rowsHTML}
+
+              <h4 class="font-bold h-heading text-sm mt-6 mb-3">💬 Notificación automática a Slack</h4>
+              <p class="text-xs text-[var(--mid-grey)] mb-3">Si configurás un webhook URL, cada request nuevo notifica automático a Cande y Dan. Sin webhook, los pedidores tienen que avisar manual.</p>
+              <input type="url" id="slack-webhook-input" class="input" placeholder="https://hooks.slack.com/services/T.../B.../xxx" value="${escapeHtml(getSlackWebhook())}" />
+              <details class="mt-3">
+                <summary class="text-xs text-[var(--nimbus-blue)] font-semibold cursor-pointer">¿Cómo crear el webhook? (paso a paso)</summary>
+                <ol class="mt-2 ml-4 text-xs text-[var(--mid-grey)] list-decimal space-y-1">
+                  <li>Andá a <strong>api.slack.com/apps</strong> → "Create New App" → "From scratch"</li>
+                  <li>Nombre: "Partner Hub Notifications" · Workspace: el de Tiendanube</li>
+                  <li>En el menú lateral, "Incoming Webhooks" → activá el toggle</li>
+                  <li>"Add New Webhook to Workspace" → seleccioná el canal o DM (ej: #partner-marketing o el DM grupal con Cande)</li>
+                  <li>Copiá la URL del webhook y pegala arriba</li>
+                  <li>Click "Guardar" abajo</li>
+                </ol>
+              </details>
+            </div>
+            <div class="p-4 border-t border-[var(--lightest-grey)] flex justify-end gap-2">
+              <button class="btn btn-ghost btn-sm" onclick="closeLibModal()">Cancelar</button>
+              <button class="btn btn-primary btn-sm" onclick="saveRequestSettings()">${ic('check','w-3 h-3')} Guardar config</button>
+            </div>
+          </div>
+        `;
+        modal.classList.add('open');
+        if (window.lucide) lucide.createIcons();
+      }
+      function saveRequestSettings() {
+        const modal = document.getElementById('lib-modal');
+        const newTimes = {};
+        modal.querySelectorAll('[data-leadtime-key]').forEach(row => {
+          const k = row.dataset.leadtimeKey;
+          const v = row.querySelector('[data-leadtime-value]').value.trim();
+          if (v) newTimes[k] = v;
+        });
+        Object.keys(REQUEST_LEAD_TIMES).forEach(k => delete REQUEST_LEAD_TIMES[k]);
+        Object.assign(REQUEST_LEAD_TIMES, newTimes);
+        saveRequestLeadTimes();
+        const webhookInput = document.getElementById('slack-webhook-input');
+        if (webhookInput) setSlackWebhook(webhookInput.value.trim());
+        closeLibModal();
+        toast('✓ Config de requests guardada');
+        renderAll();
+      }
+      window.openRequestSettings = openRequestSettings;
+      window.saveRequestSettings = saveRequestSettings;
+
       // ============== INSIGHTS VIEW ==============
       function renderInsights() {
         const scope = state._insightsScope || 'this-q'; // this-month, this-q, q1, q2, q3, q4, year
@@ -3043,7 +3700,11 @@
           <div class="bg-white rounded-2xl border border-[#e4e4e7] p-4 mb-5 flex items-center gap-2 flex-wrap">
             <span class="text-xs font-bold uppercase tracking-wider text-[var(--mid-grey)] mr-2">Periodo:</span>
             ${scopeOptions.map(([k,l]) => `<button class="btn ${scope===k?'btn-primary':'btn-secondary'} btn-xs" onclick="state._insightsScope='${k}'; renderAll();">${l}</button>`).join('')}
-            <span class="text-xs text-[var(--mid-grey)] ml-auto">Mostrando: <strong>${scopeLabel}</strong> · ${inScope.length} items</span>
+            <span class="text-xs text-[var(--mid-grey)] mx-auto">Mostrando: <strong>${scopeLabel}</strong> · ${inScope.length} items</span>
+            <div class="flex items-center gap-2">
+              <button class="btn btn-secondary btn-xs" onclick="exportInsightsCSV()" title="Descargar todos los counts/estadísticas como CSV">${ic('download','w-3 h-3')} CSV</button>
+              <button class="btn btn-secondary btn-xs" onclick="exportInsightsPDF()" title="Imprimir o guardar la vista actual como PDF">${ic('printer','w-3 h-3')} PDF</button>
+            </div>
           </div>
 
           <!-- KPIs principales -->
@@ -3085,6 +3746,8 @@
             <p class="text-xs text-[var(--mid-grey)] mb-4">Distribución de las comunicaciones según pilar editorial (Adopción, Educación, Operación, etc.).</p>
             ${pilarRows || `<p class="text-sm text-[var(--mid-grey)]">No hay comunicaciones con pilar asignado en este periodo.</p>`}
           </div>
+
+          ${renderInitiativesInsightsSection(scope, scopeLabel, from, to)}
 
           <!-- Comparativa Q por Q (siempre del año actual) -->
           <div class="bg-white rounded-2xl card-shadow p-6 mb-6">
@@ -5942,6 +6605,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
               ${b.num_invitados ? `<div><div class="label">Invitados</div><div class="text-sm font-semibold">${b.num_invitados}</div></div>` : ''}
               <div><div class="label">Owner TN</div><div class="text-sm font-semibold">${b.owner_tn || '—'}</div></div>
               <div><div class="label">Owner agencia</div><div class="text-sm font-semibold">${b.owner_agencia || '—'}</div></div>
+              ${b.partner_manager ? `<div><div class="label">Partner Manager</div><div class="text-sm font-semibold text-[var(--nimbus-blue)]">${escapeHtml(b.partner_manager)}</div></div>` : ''}
             </div>
 
             ${b.headline ? `
@@ -6070,7 +6734,9 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
 
       function openNewBenefitDrawer(presetStage, editId) {
         const editing = !!editId;
-        const b = editing ? state.benefits.find(x => x.id === editId) : { etapa: presetStage || 'idea' };
+        // Si venimos de convertir un request, usar el prefill
+        const prefill = (!editing && state._convertingFromRequest) ? state._convertingFromRequest.prefill : null;
+        const b = editing ? state.benefits.find(x => x.id === editId) : (prefill ? { ...prefill, etapa: prefill.etapa || presetStage || 'briefeado' } : { etapa: presetStage || 'idea' });
         const tipo = b.tipo_beneficio || 'ugc_estandar';
         const drawer = document.getElementById('new-drawer');
         const isUGC = tipo.startsWith('ugc');
@@ -6156,6 +6822,11 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
             <div class="grid grid-cols-2 gap-3 mb-4">
               <div><span class="label">Owner TN</span><input type="text" name="owner_tn" class="input" value="${escapeHtml(b.owner_tn||'')}" placeholder="Daniela Pereyra" /></div>
               <div><span class="label">Owner agencia</span><input type="text" name="owner_agencia" class="input" value="${escapeHtml(b.owner_agencia||'')}" /></div>
+            </div>
+            <div class="mb-4">
+              <span class="label">Partner Manager <span class="text-[10px] text-[var(--mid-grey)]">(de qué portfolio de PM viene la agencia)</span></span>
+              <input list="pm-suggestions" type="text" name="partner_manager" class="input" value="${escapeHtml(b.partner_manager||'')}" placeholder="Ej: Candela Caamaño · usá uno consistente para insights" />
+              <datalist id="pm-suggestions">${PARTNER_MANAGERS.map(p => `<option value="${escapeHtml(p)}">`).join('')}</datalist>
             </div>
             <div class="mb-4"><span class="label">Link al brief</span><input type="text" name="brief_link" class="input" value="${escapeHtml(b.brief_link||'')}" placeholder="https://…" /></div>
             <div class="mb-4"><span class="label">${ic('bar-chart-3','w-3 h-3 inline')} Link a métricas</span><input type="text" name="link_metricas" class="input" value="${escapeHtml(b.link_metricas||'')}" placeholder="https://…" /></div>
@@ -6246,6 +6917,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
           num_invitados: fd.get('num_invitados') ? +fd.get('num_invitados') : null,
           owner_tn: fd.get('owner_tn') || '',
           owner_agencia: fd.get('owner_agencia') || '',
+          partner_manager: (fd.get('partner_manager') || '').trim(),
           brief_link: fd.get('brief_link') || '',
           link_metricas: fd.get('link_metricas') || '',
           notas: fd.get('notas') || '',
@@ -6271,7 +6943,20 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
           closeAllDrawers();
           api_saveBenefit(data);
           renderAll();
-          toast(`✅ Nuevo slot · ${data.agencia}${data.fecha_objetivo?' · aparecerá en calendario el '+fmtDate(data.fecha_objetivo):' · ⚠️ sin fecha, NO aparecerá en calendario'}`);
+          // Si vino de convertir un request, enlazar y marcar el request como convertido
+          if (state._convertingFromRequest) {
+            const reqId = state._convertingFromRequest.reqId;
+            const r = state.items.find(x => x.id === reqId);
+            if (r) {
+              r.req_status = 'convertido';
+              r.linked_benefit_id = data.id;
+              api_saveItem(r);
+            }
+            state._convertingFromRequest = null;
+            toast(`🚀 Request convertido en iniciativa · ${data.agencia}`);
+          } else {
+            toast(`✅ Nuevo slot · ${data.agencia}${data.fecha_objetivo?' · aparecerá en calendario el '+fmtDate(data.fecha_objetivo):' · ⚠️ sin fecha, NO aparecerá en calendario'}`);
+          }
           setTimeout(() => openBenefitDetail(data.id), 300);
         }
         console.log('[benefit-save] guardado:', data.id, 'fecha_objetivo:', data.fecha_objetivo, 'fecha_publicado:', data.fecha_publicado);
@@ -6311,6 +6996,7 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
           benefits: 'Iniciativas con agencias',
           ai: 'Asistente AI',
           insights: 'Insights & Resumen',
+          requests: 'Requests de iniciativas',
           library: 'Biblioteca Partner Marketing',
         })[v] || 'Hub';
         renderAll();
@@ -6327,8 +7013,22 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
         else if (state.view === 'initiatives' || state.view === 'benefits') c.innerHTML = renderBenefits();
         else if (state.view === 'ai') c.innerHTML = renderAI();
         else if (state.view === 'insights') c.innerHTML = renderInsights();
+        else if (state.view === 'requests') c.innerHTML = renderRequests();
         else if (state.view === 'library') c.innerHTML = renderLibrary();
         if (window.lucide) lucide.createIcons();
+        // Actualizar badge de requests pendientes en sidebar
+        updateRequestsBadge();
+      }
+      function updateRequestsBadge() {
+        const badge = document.getElementById('requests-count-badge');
+        if (!badge) return;
+        const pending = state.items.filter(it => it.tipo === 'request' && ['nuevo','en_revision'].includes(it.req_status||'nuevo')).length;
+        if (pending > 0) {
+          badge.textContent = pending;
+          badge.style.display = '';
+        } else {
+          badge.style.display = 'none';
+        }
       }
 
       // First-load: admin por default si no hay rol guardado (sin popup intrusivo)

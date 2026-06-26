@@ -781,19 +781,34 @@
         if (!url) { console.log('[slack] webhook no configurado, salteo notificación'); return false; }
         const bt = BENEFIT_TYPES[req.tipo_beneficio_solicitado] || { label: req.tipo_beneficio_solicitado || 'Tipo' };
         const hubUrl = window.location.origin;
+        // Payload compatible con AMBOS:
+        // - Slack Workflow Builder (lee variables planas: tipo, agencia, solicitante, etc.)
+        // - Slack Incoming Webhook clásico (lee el campo "text")
+        const textFallback =
+          `🆕 *Nuevo request de Partner Marketing*\n` +
+          `*Tipo:* ${bt.label}\n` +
+          `*Agencia:* ${req.agencia || '?'}\n` +
+          `*Solicita:* ${req.partner_manager_solicitante || '?'}${req.solicitante_alt?' / '+req.solicitante_alt:''}\n` +
+          `*Fecha objetivo:* ${req.fecha_objetivo || 'sin definir'}\n` +
+          `*Prioridad:* ${req.prioridad || '—'}\n\n` +
+          `*Descripción:*\n${req.descripcion || '(sin descripción)'}\n\n` +
+          `👉 Ver en el hub: ${hubUrl}\n` +
+          `cc Cande / Dan`;
         const payload = {
-          text: `🆕 *Nuevo request de Partner Marketing*\n` +
-                `*Tipo:* ${bt.label}\n` +
-                `*Agencia:* ${req.agencia}\n` +
-                `*Solicita:* ${req.partner_manager_solicitante}${req.solicitante_alt?' / '+req.solicitante_alt:''}\n` +
-                `*Fecha objetivo:* ${req.fecha_objetivo || 'sin definir'}\n` +
-                `*Prioridad:* ${req.prioridad || '—'}\n\n` +
-                `*Descripción:*\n${req.descripcion || '(sin descripción)'}\n\n` +
-                `👉 Ver en el hub: ${hubUrl}/?req=${req.id}\n` +
-                `cc <@Cande> <@Dan>`,
+          // Para Workflow Builder · variables planas
+          tipo: bt.label,
+          agencia: req.agencia || '',
+          solicitante: req.partner_manager_solicitante || '',
+          solicitante_alt: req.solicitante_alt || '',
+          fecha_objetivo: req.fecha_objetivo || 'sin definir',
+          prioridad: req.prioridad || '',
+          descripcion: req.descripcion || '',
+          link_hub: hubUrl,
+          // Para Incoming Webhook clásico
+          text: textFallback,
         };
         try {
-          await fetch(url, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+          await fetch(url, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload), mode: 'no-cors' });
           return true;
         } catch(e) {
           console.warn('[slack] error enviando webhook', e);
@@ -3574,14 +3589,25 @@
               <p class="text-xs text-[var(--mid-grey)] mb-3">Si configurás un webhook URL, cada request nuevo notifica automático a Cande y Dan. Sin webhook, los pedidores tienen que avisar manual.</p>
               <input type="url" id="slack-webhook-input" class="input" placeholder="https://hooks.slack.com/services/T.../B.../xxx" value="${escapeHtml(getSlackWebhook())}" />
               <details class="mt-3">
-                <summary class="text-xs text-[var(--nimbus-blue)] font-semibold cursor-pointer">¿Cómo crear el webhook? (paso a paso)</summary>
+                <summary class="text-xs text-[var(--nimbus-blue)] font-semibold cursor-pointer">¿Cómo crear el webhook? · Opción A · Workflow Builder (recomendado · sin aprobación IT)</summary>
+                <ol class="mt-2 ml-4 text-xs text-[var(--mid-grey)] list-decimal space-y-1">
+                  <li>En Slack → click en el nombre del workspace arriba → "Herramientas y configuración" → "Workflow Builder"</li>
+                  <li>"+ Crear" → seleccioná "Workflow"</li>
+                  <li>Elegí "Webhook" como evento desencadenante (trigger)</li>
+                  <li>Sumá estas variables: <code>tipo</code>, <code>agencia</code>, <code>solicitante</code>, <code>solicitante_alt</code>, <code>fecha_objetivo</code>, <code>prioridad</code>, <code>descripcion</code>, <code>link_hub</code> (todas texto)</li>
+                  <li>Sumá un step "Enviar mensaje a un canal" → seleccioná <strong>#team-partnermkt</strong></li>
+                  <li>Componé el mensaje usando las variables (ej: <code>🆕 Nuevo request: {{tipo}} con {{agencia}} · pidió {{solicitante}} · {{link_hub}}</code>)</li>
+                  <li>"Publicar" → te genera una URL · copiala y pegala arriba</li>
+                </ol>
+              </details>
+              <details class="mt-2">
+                <summary class="text-xs text-[var(--nimbus-blue)] font-semibold cursor-pointer">¿Cómo crear el webhook? · Opción B · App con Incoming Webhook (necesita aprobación IT)</summary>
                 <ol class="mt-2 ml-4 text-xs text-[var(--mid-grey)] list-decimal space-y-1">
                   <li>Andá a <strong>api.slack.com/apps</strong> → "Create New App" → "From scratch"</li>
                   <li>Nombre: "Partner Hub Notifications" · Workspace: el de Tiendanube</li>
                   <li>En el menú lateral, "Incoming Webhooks" → activá el toggle</li>
-                  <li>"Add New Webhook to Workspace" → seleccioná el canal o DM (ej: #partner-marketing o el DM grupal con Cande)</li>
-                  <li>Copiá la URL del webhook y pegala arriba</li>
-                  <li>Click "Guardar" abajo</li>
+                  <li>"Add New Webhook to Workspace" → puede pedir aprobación del admin del workspace</li>
+                  <li>Seleccioná el canal (#team-partnermkt) y copiá la URL · pegala arriba</li>
                 </ol>
               </details>
             </div>

@@ -719,15 +719,27 @@
       const AUDIENCES = ['Agencies', 'Merchants', 'Leads'];
       // Tipos de iniciativa (cross-cutting tag) — se usan tanto en iniciativas como en acciones del calendario
       const INITIATIVE_TYPE_TAGS = ['DEMAND GEN', 'EDUCATION', 'ENGAGEMENT', 'ADOPTION', 'POSITIONING', 'OTHER'];
-      // Lista de Partner Managers · editable vía localStorage si el equipo crece
-      const DEFAULT_PARTNER_MANAGERS = ['Daniela Pereyra', 'Candela Caamaño', 'Mauro Dri', 'Alejandra Saavedra G.'];
+      // Lista de Partner Managers (los del equipo Channels) · editable
+      const DEFAULT_PARTNER_MANAGERS = ['Mauro Dri', 'Luciana Miraglia', 'Marcos Uribelarrea', 'Gianfranco Reniero'];
       let PARTNER_MANAGERS = (() => {
         try { const saved = JSON.parse(localStorage.getItem('pmh_partner_managers')); if (Array.isArray(saved) && saved.length) return saved; } catch(e) {}
         return [...DEFAULT_PARTNER_MANAGERS];
       })();
       function savePartnerManagers() {
         try { localStorage.setItem('pmh_partner_managers', JSON.stringify(PARTNER_MANAGERS)); } catch(e) {}
+        if (typeof api_saveConfig === 'function') api_saveConfig('partner_managers', PARTNER_MANAGERS);
       }
+      function addPartnerManager() {
+        const name = prompt('Nombre del nuevo Partner Manager:');
+        if (!name || !name.trim()) return;
+        const clean = name.trim();
+        if (PARTNER_MANAGERS.includes(clean)) { toast('Ya existe ese PM'); return; }
+        PARTNER_MANAGERS.push(clean);
+        savePartnerManagers();
+        renderAll();
+        toast(`✓ ${clean} sumado a la lista de PMs`);
+      }
+      window.addPartnerManager = addPartnerManager;
 
       // ============== REQUESTS CONFIG ==============
       // Status posibles de un request
@@ -1064,7 +1076,12 @@
       // (tipo_iniciativa, audiencia_segmentada, etc. — no son columnas dedicadas en Postgres)
       function packExtraFields(obj) {
         const metadata = { ...(obj.metadata || {}) };
-        const extras = ['tipo_iniciativa', 'audiencia_segmentada', 'partner_manager', 'etapa_previa'];
+        const extras = [
+          'tipo_iniciativa', 'audiencia_segmentada', 'partner_manager', 'etapa_previa',
+          // Request-specific fields (la tabla items no tiene estas columnas, van vía metadata)
+          'tipo_beneficio_solicitado', 'agencia', 'partner_manager_solicitante', 'solicitante_alt',
+          'fecha_objetivo', 'descripcion', 'notas', 'req_status', 'linked_benefit_id', 'created_at',
+        ];
         for (const k of extras) {
           if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') metadata[k] = obj[k];
         }
@@ -1454,10 +1471,17 @@
             try { it[f] = JSON.parse(it[f]); } catch(e) { it[f] = []; }
           }
         });
-        // Hydrate extras desde metadata (tipo_iniciativa, audiencia_segmentada) si no están en top-level
+        // Hydrate extras desde metadata (tipo_iniciativa, audiencia_segmentada, request fields) si no están en top-level
         if (it.metadata && typeof it.metadata === 'object' && !Array.isArray(it.metadata)) {
-          if (!it.tipo_iniciativa && it.metadata.tipo_iniciativa) it.tipo_iniciativa = it.metadata.tipo_iniciativa;
-          if (!it.audiencia_segmentada && it.metadata.audiencia_segmentada) it.audiencia_segmentada = it.metadata.audiencia_segmentada;
+          const md = it.metadata;
+          const hydrateKeys = [
+            'tipo_iniciativa', 'audiencia_segmentada',
+            'tipo_beneficio_solicitado', 'agencia', 'partner_manager_solicitante', 'solicitante_alt',
+            'fecha_objetivo', 'descripcion', 'notas', 'req_status', 'linked_benefit_id', 'created_at',
+          ];
+          for (const k of hydrateKeys) {
+            if ((it[k] === undefined || it[k] === null || it[k] === '') && md[k] !== undefined) it[k] = md[k];
+          }
         }
         // Auto-fix: links legacy guardados como strings sueltos ['https://...'] → [{url, label}]
         if (Array.isArray(it.links)) {
@@ -3301,6 +3325,19 @@
         `;
       }
       function renderRequestCard(r) {
+        const isBroken = !r.agencia && !r.tipo_beneficio_solicitado && !r.partner_manager_solicitante;
+        if (isBroken) {
+          return `<div class="bg-[#fff7ed] border-2 border-dashed border-[#fed7aa] rounded-2xl p-4 mb-3">
+            <div class="flex items-center gap-3">
+              <span class="text-2xl">⚠️</span>
+              <div class="flex-1">
+                <div class="font-bold h-heading text-sm text-[#9a3412]">Request con datos incompletos · cargado antes del fix de persistencia</div>
+                <div class="text-xs text-[var(--mid-grey)]">Este request se cargó antes de que arregláramos el bug de persistencia. La info no se guardó completa. Recomendado: eliminarlo y volver a crearlo.</div>
+              </div>
+              ${isAdmin() ? `<button class="btn btn-secondary btn-xs" onclick="deleteRequest('${r.id}')">${ic('trash-2','w-3 h-3')} Eliminar</button>` : ''}
+            </div>
+          </div>`;
+        }
         const bt = BENEFIT_TYPES[r.tipo_beneficio_solicitado] || { label: r.tipo_beneficio_solicitado || 'Tipo', icon: 'circle', color: '#9ca3af' };
         const status = r.req_status || 'nuevo';
         const st = REQUEST_STATUSES[status] || REQUEST_STATUSES.nuevo;
@@ -3369,11 +3406,18 @@
                 <p class="text-[10px] text-[var(--mid-grey)] mt-1" id="lead-time-hint">${r.tipo_beneficio_solicitado && REQUEST_LEAD_TIMES[r.tipo_beneficio_solicitado] ? `⏰ Anticipación sugerida: ${REQUEST_LEAD_TIMES[r.tipo_beneficio_solicitado]}` : ''}</p>
               </div>
               <div><span class="label">Agencia *</span><input type="text" name="agencia" class="input" value="${escapeHtml(r.agencia||'')}" placeholder="Ej: Innovate Group" required /></div>
-              <div><span class="label">Partner Manager solicitante *</span>
-                <input list="pm-suggestions-req" type="text" name="partner_manager_solicitante" class="input" value="${escapeHtml(r.partner_manager_solicitante||'')}" placeholder="Quien hace el pedido" required />
-                <datalist id="pm-suggestions-req">${PARTNER_MANAGERS.map(p => `<option value="${escapeHtml(p)}">`).join('')}</datalist>
+              <div>
+                <div class="flex items-center justify-between">
+                  <span class="label">Partner Manager solicitante *</span>
+                  <button type="button" class="text-[10px] text-[var(--nimbus-blue)] font-semibold hover:underline" onclick="addPartnerManager()">+ Agregar PM</button>
+                </div>
+                <select name="partner_manager_solicitante" class="select" required>
+                  <option value="" ${!r.partner_manager_solicitante?'selected':''}>— Seleccionar PM —</option>
+                  ${PARTNER_MANAGERS.map(p => `<option value="${escapeHtml(p)}" ${r.partner_manager_solicitante===p?'selected':''}>${escapeHtml(p)}</option>`).join('')}
+                  ${r.partner_manager_solicitante && !PARTNER_MANAGERS.includes(r.partner_manager_solicitante) ? `<option value="${escapeHtml(r.partner_manager_solicitante)}" selected>${escapeHtml(r.partner_manager_solicitante)} (custom)</option>` : ''}
+                </select>
               </div>
-              <div><span class="label">¿Es otra persona?</span><input type="text" name="solicitante_alt" class="input" value="${escapeHtml(r.solicitante_alt||'')}" placeholder="Opcional · si el pedido viene de alguien más" /></div>
+              <div><span class="label">Otro solicitante <span class="text-[10px] text-[var(--mid-grey)]">(opcional)</span></span><input type="text" name="solicitante_alt" class="input" value="${escapeHtml(r.solicitante_alt||'')}" placeholder="Si el pedido viene de alguien fuera del equipo PM" /></div>
               <div><span class="label">Fecha objetivo</span><input type="date" name="fecha_objetivo" class="input" value="${r.fecha_objetivo||''}" /></div>
               <div><span class="label">Prioridad sugerida</span>
                 <select name="prioridad" class="select"><option value="">—</option>${['P1','P2','P3'].map(p => `<option ${r.prioridad===p?'selected':''}>${p}</option>`).join('')}</select>
@@ -3477,6 +3521,7 @@
         if (!r) return;
         if (!confirm(`¿Convertir este request en iniciativa real?\n\nVa a abrir el form de Nueva iniciativa pre-llenado con los datos del request. Después de guardar, el request queda marcado como "Convertido" y enlazado a la iniciativa.`)) return;
         // Pre-rellenar campos para el form de iniciativa via state temporal
+        // El PM solicitante del request se traslada como partner_manager de la iniciativa
         state._convertingFromRequest = {
           reqId,
           prefill: {
@@ -3484,7 +3529,8 @@
             agencia: r.agencia,
             fecha_objetivo: r.fecha_objetivo,
             prioridad: r.prioridad,
-            notas: r.descripcion + (r.notas ? '\n\n' + r.notas : ''),
+            partner_manager: r.partner_manager_solicitante || '',
+            notas: (r.descripcion||'') + (r.notas ? '\n\n' + r.notas : ''),
             headline: '',
             etapa: 'briefeado',
           }
@@ -6824,9 +6870,15 @@ comunicacion,email,Convocatoria Webinar,2026-06-01,Merchants,Email,programado,P1
               <div><span class="label">Owner agencia</span><input type="text" name="owner_agencia" class="input" value="${escapeHtml(b.owner_agencia||'')}" /></div>
             </div>
             <div class="mb-4">
-              <span class="label">Partner Manager <span class="text-[10px] text-[var(--mid-grey)]">(de qué portfolio de PM viene la agencia)</span></span>
-              <input list="pm-suggestions" type="text" name="partner_manager" class="input" value="${escapeHtml(b.partner_manager||'')}" placeholder="Ej: Candela Caamaño · usá uno consistente para insights" />
-              <datalist id="pm-suggestions">${PARTNER_MANAGERS.map(p => `<option value="${escapeHtml(p)}">`).join('')}</datalist>
+              <div class="flex items-center justify-between">
+                <span class="label">Partner Manager <span class="text-[10px] text-[var(--mid-grey)]">(de qué portfolio de PM viene la agencia)</span></span>
+                <button type="button" class="text-[10px] text-[var(--nimbus-blue)] font-semibold hover:underline" onclick="addPartnerManager()">+ Agregar PM</button>
+              </div>
+              <select name="partner_manager" class="select">
+                <option value="" ${!b.partner_manager?'selected':''}>— Sin asignar —</option>
+                ${PARTNER_MANAGERS.map(p => `<option value="${escapeHtml(p)}" ${b.partner_manager===p?'selected':''}>${escapeHtml(p)}</option>`).join('')}
+                ${b.partner_manager && !PARTNER_MANAGERS.includes(b.partner_manager) ? `<option value="${escapeHtml(b.partner_manager)}" selected>${escapeHtml(b.partner_manager)} (custom)</option>` : ''}
+              </select>
             </div>
             <div class="mb-4"><span class="label">Link al brief</span><input type="text" name="brief_link" class="input" value="${escapeHtml(b.brief_link||'')}" placeholder="https://…" /></div>
             <div class="mb-4"><span class="label">${ic('bar-chart-3','w-3 h-3 inline')} Link a métricas</span><input type="text" name="link_metricas" class="input" value="${escapeHtml(b.link_metricas||'')}" placeholder="https://…" /></div>

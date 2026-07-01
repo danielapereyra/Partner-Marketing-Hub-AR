@@ -769,12 +769,21 @@
       function saveRequestLeadTimes() {
         try { localStorage.setItem('pmh_request_lead_times', JSON.stringify(REQUEST_LEAD_TIMES)); } catch(e) {}
       }
-      // Slack webhook URL (admin only · localStorage)
+      // Slack webhook URL · compartido entre todos los usuarios via backend config
+      // (localStorage se usa como cache, pero el source of truth es la config del backend)
       function getSlackWebhook() {
-        try { return localStorage.getItem('pmh_slack_webhook') || ''; } catch(e) { return ''; }
+        try {
+          // Primero intentamos backend (via state.config), después localStorage
+          if (state.config && state.config.slack_webhook) return state.config.slack_webhook;
+          return localStorage.getItem('pmh_slack_webhook') || '';
+        } catch(e) { return ''; }
       }
       function setSlackWebhook(url) {
         try { localStorage.setItem('pmh_slack_webhook', url || ''); } catch(e) {}
+        // Sync al backend para que todos los usuarios lo vean
+        if (!state.config) state.config = {};
+        state.config.slack_webhook = url || '';
+        if (typeof api_saveConfig === 'function') api_saveConfig('slack_webhook', url || '');
       }
       async function notifyNewRequestToSlack(req) {
         const url = getSlackWebhook();
@@ -808,10 +817,23 @@
           text: textFallback,
         };
         try {
-          await fetch(url, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload), mode: 'no-cors' });
+          console.log('[slack] POST →', url.slice(0, 60) + '...');
+          // IMPORTANTE: NO poner Content-Type: application/json · dispara CORS preflight
+          // que Slack rechaza. Sin header, es un "simple request" y pasa OK.
+          // Slack parsea el body como JSON igual.
+          const res = await fetch(url, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) {
+            const body = await res.text().catch(() => '');
+            console.warn('[slack] ⚠️ Slack respondió con status', res.status, '·', body);
+            return false;
+          }
+          console.log('[slack] ✅ enviado OK · status', res.status);
           return true;
         } catch(e) {
-          console.warn('[slack] error enviando webhook', e);
+          console.warn('[slack] ❌ error de red enviando webhook', e);
           return false;
         }
       }
@@ -1161,6 +1183,17 @@
               Object.assign(libTabLabels, config.library_labels);
             }
             if (config.benefit_caps) state.benefit_caps = config.benefit_caps;
+            // Guardar toda la config en state.config para que getSlackWebhook() y otros helpers puedan leerla
+            state.config = { ...(state.config||{}), ...config };
+            // Sincronizar PMs desde backend si están
+            if (Array.isArray(config.partner_managers) && config.partner_managers.length) {
+              PARTNER_MANAGERS.length = 0;
+              PARTNER_MANAGERS.push(...config.partner_managers);
+            }
+            // Slack webhook: si viene del backend, cachearlo también en localStorage
+            if (config.slack_webhook) {
+              try { localStorage.setItem('pmh_slack_webhook', config.slack_webhook); } catch(e) {}
+            }
           }
           setSyncStatus('ok');
           renderAll();
